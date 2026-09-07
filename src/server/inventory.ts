@@ -4,7 +4,7 @@
  * Filtering, sorting and pagination all happen in PostgreSQL. Nothing loads the
  * whole table into memory, and every query is scoped to one workspace.
  */
-import { ItemStatus, PlatformKey, Prisma } from '@/generated/prisma/client';
+import { type ItemStatus, type PlatformKey, type Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/db';
 
 export const INVENTORY_PAGE_SIZE = 24;

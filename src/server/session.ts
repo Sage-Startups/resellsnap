@@ -8,7 +8,7 @@
 import { cache } from 'react';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { Role, UserStatus, WorkspaceRole } from '@/generated/prisma/enums';
+import { Role, UserStatus, type WorkspaceRole } from '@/generated/prisma/enums';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 

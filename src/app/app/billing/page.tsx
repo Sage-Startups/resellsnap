@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Suspense } from 'react';
 import { Check, Info } from 'lucide-react';
 import {
-  Alert, Badge, Card, CardContent, CardHeader, CardTitle, PageHeader, Skeleton, StatTile,
+  Alert, Badge, Card, CardContent, CardHeader, CardTitle, PageHeader, StatTile,
 } from '@/components/ui';
 import { CheckoutButton, CheckoutResult, PortalButton } from './billing-buttons';
 import { prisma } from '@/lib/db';
@@ -43,7 +43,6 @@ export default async function BillingPage() {
     }),
   ]);
 
-  const currency = context.workspace.currency;
   const monthly = context.workspace.monthlyCredits;
   const purchased = context.workspace.purchasedCredits;
   const stripeReady = isStripeConfigured();

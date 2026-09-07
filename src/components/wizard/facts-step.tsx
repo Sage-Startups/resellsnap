@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Alert, Button, Field, Input, Select, Textarea } from '@/components/ui';
+import { Alert, Field, Input, Select, Textarea } from '@/components/ui';
 import {
   CATEGORY_HINTS,
   CONDITION_OPTIONS,

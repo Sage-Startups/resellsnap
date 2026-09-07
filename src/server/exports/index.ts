@@ -7,10 +7,11 @@
  * photos in listing order with a README describing the item.
  */
 import JSZip from 'jszip';
-import { ExportFormat, ExportStatus, PlatformKey } from '@/generated/prisma/enums';
+import { ExportFormat, ExportStatus, type PlatformKey } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/db';
 import { logger, sanitizeError } from '@/lib/logger';
 import { formatMoney } from '@/lib/money';
+import { PRICE_SOURCE_LABELS, priceEstimateNote } from '@/lib/price-labels';
 import { buildExportKey, getStorage } from '@/server/storage';
 import { PLATFORM_NAMES } from '@/server/marketplace/registry';
 import { getSettings } from '@/server/settings';
@@ -50,6 +51,16 @@ interface ExportContext {
     fields: Record<string, unknown>;
   } | null;
   priceCents: number | null;
+  /**
+   * How the price was arrived at. Carried through every export format so a
+   * copied price is never presented as an unqualified valuation.
+   */
+  price: {
+    cents: number;
+    source: string;
+    confidence: string;
+    explanation: string | null;
+  } | null;
 }
 
 async function loadContext(itemId: string, platform: PlatformKey | null): Promise<ExportContext | null> {
@@ -118,6 +129,14 @@ async function loadContext(itemId: string, platform: PlatformKey | null): Promis
         }
       : null,
     priceCents: balanced?.amountCents ?? null,
+    price: balanced
+      ? {
+          cents: balanced.amountCents,
+          source: balanced.source,
+          confidence: balanced.confidence,
+          explanation: balanced.explanation,
+        }
+      : null,
   };
 }
 
@@ -140,7 +159,12 @@ export function buildTextExport(context: ExportContext, brandName: string): stri
   ];
 
   if (context.priceCents !== null) {
-    lines.push('PRICE', formatMoney(context.priceCents, context.item.currency), '');
+    lines.push('SUGGESTED PRICE (ESTIMATE)', formatMoney(context.priceCents, context.item.currency));
+    if (context.price) {
+      lines.push(priceEstimateNote(context.price.source, context.price.confidence));
+      if (context.price.explanation) lines.push(context.price.explanation);
+    }
+    lines.push('');
   }
 
   lines.push('QUANTITY', String(context.item.quantity), '');
@@ -189,6 +213,14 @@ export function buildJsonExport(context: ExportContext): string {
       description: context.variant?.description ?? context.listing?.description ?? '',
       priceCents: context.priceCents,
       currency: context.item.currency,
+      // A bare number would read as a valuation, so the qualifier travels with it.
+      priceIsEstimate: true,
+      priceBasis: context.price ? PRICE_SOURCE_LABELS[context.price.source] ?? context.price.source : null,
+      priceConfidence: context.price?.confidence ?? null,
+      priceNote: context.price
+        ? priceEstimateNote(context.price.source, context.price.confidence)
+        : null,
+      priceExplanation: context.price?.explanation ?? null,
       quantity: context.item.quantity,
       condition: context.listing?.conditionSummary ?? null,
       defectDisclosure: context.listing?.defectDisclosure ?? null,
@@ -225,8 +257,10 @@ export function buildCsvExport(context: ExportContext): string {
     'platform',
     'title',
     'description',
-    'price',
+    'price_estimate',
     'currency',
+    'price_basis',
+    'price_confidence',
     'quantity',
     'condition',
     'defects',
@@ -242,6 +276,8 @@ export function buildCsvExport(context: ExportContext): string {
     context.variant?.description ?? context.listing?.description ?? '',
     context.priceCents === null ? '' : (context.priceCents / 100).toFixed(2),
     context.item.currency,
+    context.price ? (PRICE_SOURCE_LABELS[context.price.source] ?? context.price.source) : '',
+    context.price?.confidence ?? '',
     context.item.quantity,
     context.listing?.conditionSummary ?? '',
     context.listing?.defectDisclosure ?? '',

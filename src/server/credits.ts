@@ -393,6 +393,55 @@ export async function resetMonthlyCredits(input: {
   });
 }
 
+/**
+ * Expires the monthly bucket, e.g. when a subscription ends.
+ *
+ * Writes a ledger entry rather than simply zeroing the cached column: the
+ * ledger is authoritative, and an unexplained gap between the two is
+ * indistinguishable from a bug.
+ */
+export async function expireMonthlyCredits(input: {
+  workspaceId: string;
+  reason: string;
+  idempotencyKey: string;
+}): Promise<GrantResult> {
+  return prisma.$transaction(async (tx) => {
+    const existing = await findExisting(tx, input.idempotencyKey);
+    if (existing) {
+      return { applied: false, balance: await getBalanceInTx(tx, input.workspaceId), entryId: existing.id };
+    }
+
+    const balance = await lockWorkspace(tx, input.workspaceId);
+    if (balance.monthly === 0) {
+      return { applied: false, balance, entryId: '' };
+    }
+
+    const entry = await tx.creditLedger.create({
+      data: {
+        workspaceId: input.workspaceId,
+        kind: CreditEntryKind.EXPIRY,
+        bucket: CreditBucket.MONTHLY,
+        delta: -balance.monthly,
+        balanceAfter: 0,
+        reason: input.reason,
+        idempotencyKey: input.idempotencyKey,
+      },
+    });
+
+    await tx.workspace.update({
+      where: { id: input.workspaceId },
+      data: { monthlyCredits: 0 },
+    });
+
+    return {
+      applied: true,
+      // Purchased credits are untouched: the seller paid for those separately.
+      balance: { monthly: 0, purchased: balance.purchased, total: balance.purchased },
+      entryId: entry.id,
+    };
+  });
+}
+
 /** Admin-initiated adjustment. A reason is mandatory and is stored on the entry. */
 export async function adminAdjustCredits(input: {
   workspaceId: string;

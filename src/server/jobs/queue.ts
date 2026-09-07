@@ -6,7 +6,7 @@
  * Redis to the deployment. Failures back off exponentially with jitter and
  * land in a dead-letter state after `maxAttempts`.
  */
-import { JobStatus, JobType } from '@/generated/prisma/enums';
+import { JobStatus, type JobType } from '@/generated/prisma/enums';
 import type { Job } from '@/lib/models';
 import { prisma } from '@/lib/db';
 import { correlationId } from '@/lib/ids';

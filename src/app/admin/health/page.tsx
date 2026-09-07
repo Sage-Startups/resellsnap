@@ -8,6 +8,7 @@ import { requireStaff } from '@/server/session';
 import { getQueueStats } from '@/server/jobs/queue';
 import { runHealthChecks } from '@/server/admin/health';
 import { formatNumber, relativeTime } from '@/lib/utils';
+import { minutesSince } from '@/lib/time';
 
 export const metadata: Metadata = { title: 'System health' };
 
@@ -71,7 +72,7 @@ export default async function AdminHealthPage() {
           label="Oldest queued"
           value={
             queue.oldestQueuedAt
-              ? `${Math.round((Date.now() - queue.oldestQueuedAt.getTime()) / 60_000)}m`
+              ? `${minutesSince(queue.oldestQueuedAt)}m`
               : '—'
           }
           hint="A rising number means the worker is behind or down"

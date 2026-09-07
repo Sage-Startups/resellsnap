@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { randomUUID } from 'node:crypto';
-import { ItemStatus, PlatformKey } from '@/generated/prisma/enums';
+import { ItemStatus, type PlatformKey } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/db';
 import { sanitizeError } from '@/lib/logger';
 import { enforceRateLimit, RateLimitError } from '@/lib/rate-limit';

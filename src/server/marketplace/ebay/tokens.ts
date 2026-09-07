@@ -35,6 +35,12 @@ interface RawTokenResponse {
 /** Refresh this far before actual expiry so an in-flight call never 401s. */
 const EXPIRY_SKEW_MS = 5 * 60_000;
 
+/** How long a refresh will queue behind another process's refresh. */
+const REFRESH_LOCK_WAIT_MS = 10_000;
+
+/** Upper bound on holding the lock: one eBay token round trip, plus slack. */
+const REFRESH_LOCK_TIMEOUT_MS = 20_000;
+
 async function postToken(body: URLSearchParams): Promise<RawTokenResponse> {
   const response = await fetch(ebayEndpoints().tokenUrl, {
     method: 'POST',
@@ -182,8 +188,23 @@ async function readToken(connectionId: string, kind: 'access' | 'refresh') {
 }
 
 /**
- * A 64-bit PostgreSQL advisory lock keyed on the connection id. Held only for
- * the duration of a refresh, and always released.
+ * Serialises token refreshes for one connection across every process.
+ *
+ * The lock is **transaction scoped** (`pg_advisory_xact_lock`), not session
+ * scoped. Prisma talks to PostgreSQL through a connection pool, so a session
+ * lock can be taken on one pooled connection and released on another: the
+ * release silently fails and the lock then survives for the life of the
+ * pooled connection, deadlocking every later refresh. A transaction lock is
+ * released by the commit or rollback, so it cannot leak even if `fn` throws
+ * or the process dies mid-refresh.
+ *
+ * `fn` deliberately runs on the ordinary pooled client rather than inside the
+ * transaction. Exclusion is what we need here, not atomicity: the lock is held
+ * for as long as `fn` runs, so no other backend can refresh the same
+ * connection concurrently, while `fn`'s own writes commit independently.
+ *
+ * The lock is wrapped in a CTE because `pg_advisory_xact_lock` returns `void`,
+ * which the driver adapter cannot deserialise as a result column.
  */
 async function withConnectionLock<T>(connectionId: string, fn: () => Promise<T>): Promise<T> {
   const lockKey = BigInt.asIntN(
@@ -193,12 +214,21 @@ async function withConnectionLock<T>(connectionId: string, fn: () => Promise<T>)
     ),
   );
 
-  await prisma.$queryRaw`SELECT pg_advisory_lock(${lockKey}::bigint)`;
-  try {
-    return await fn();
-  } finally {
-    await prisma.$queryRaw`SELECT pg_advisory_unlock(${lockKey}::bigint)`;
-  }
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`
+        WITH lock AS (SELECT pg_advisory_xact_lock(${lockKey}::bigint))
+        SELECT 1 AS locked FROM lock
+      `;
+      return fn();
+    },
+    {
+      // Long enough to cover waiting for the lock plus one bounded eBay round
+      // trip, short enough that a wedged refresh cannot pin a connection.
+      maxWait: REFRESH_LOCK_WAIT_MS,
+      timeout: REFRESH_LOCK_TIMEOUT_MS,
+    },
+  );
 }
 
 /**

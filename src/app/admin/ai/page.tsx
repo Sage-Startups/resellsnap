@@ -10,6 +10,7 @@ import { getQueueStats } from '@/server/jobs/queue';
 import { getEnv, isAIConfigured } from '@/lib/env';
 import { formatMoney } from '@/lib/money';
 import { formatNumber, relativeTime } from '@/lib/utils';
+import { hoursAgo, startOfToday } from '@/lib/time';
 import type { AIJobStatus } from '@/generated/prisma/enums';
 
 export const metadata: Metadata = { title: 'AI operations' };
@@ -54,13 +55,13 @@ export default async function AdminAIPage({
     prisma.aIJob.count({ where }),
     getQueueStats(),
     prisma.aIUsage.aggregate({
-      where: { createdAt: { gte: new Date(Date.now() - 86_400_000) } },
+      where: { createdAt: { gte: hoursAgo(24) } },
       _sum: { inputTokens: true, outputTokens: true, estimatedCostMicros: true },
       _count: { _all: true },
     }),
     getSettings(),
     prisma.aIUsage.aggregate({
-      where: { createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
+      where: { createdAt: { gte: startOfToday() } },
       _sum: { estimatedCostMicros: true },
     }),
   ]);

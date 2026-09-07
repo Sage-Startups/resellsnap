@@ -53,9 +53,15 @@ export function NewListingWizard({
 
   // Restore an in-progress draft so a refresh or a lost connection is not
   // punished by losing the seller's typing.
+  //
+  // This deliberately sets state from an effect. `localStorage` cannot be read
+  // during render — the server has no `window`, so a lazy initializer would
+  // produce markup that does not match the client and break hydration. One
+  // extra render on mount is the price of a hydration-safe restore.
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(draftKey(itemId));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- see above
       if (stored) setFacts({ ...EMPTY_FACTS, ...(JSON.parse(stored) as FactsFormValues) });
     } catch {
       // A corrupt draft is not worth surfacing; start clean.

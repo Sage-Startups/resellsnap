@@ -22,6 +22,19 @@ import { getStorage, buildPhotoKey, assertKeyInWorkspace } from '@/server/storag
 import { EXTENSION_BY_TYPE, isAllowedImageType, type AllowedImageType } from '@/server/storage/images';
 import { factsFromSellerInput, type SellerFacts } from './facts';
 
+/**
+ * True for a PostgreSQL unique-constraint violation, whatever shape the driver
+ * adapter reports it in. Prisma surfaces these as `P2002`.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
+}
+
 export class ItemServiceError extends Error {
   readonly code: string;
 
@@ -391,14 +404,30 @@ export async function startGeneration(input: {
     throw new ItemServiceError('already_running', 'A generation is already running for this item.');
   }
 
-  const aiJob = await prisma.aIJob.create({
-    data: {
-      kind: AIJobKind.ANALYZE,
-      workspaceId: input.workspaceId,
-      itemId: input.itemId,
-      status: 'QUEUED',
-    },
-  });
+  // The check above is racy on its own: two requests milliseconds apart both
+  // read "nothing running" and both charge. The partial unique index
+  // `ai_job_one_active_per_item` is the authority, and creating the job before
+  // touching credits means the loser of the race is rejected having paid
+  // nothing.
+  let aiJob;
+  try {
+    aiJob = await prisma.aIJob.create({
+      data: {
+        kind: AIJobKind.ANALYZE,
+        workspaceId: input.workspaceId,
+        itemId: input.itemId,
+        status: 'QUEUED',
+      },
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ItemServiceError(
+        'already_running',
+        'A generation is already running for this item.',
+      );
+    }
+    throw error;
+  }
 
   let creditsRemaining: number;
   try {

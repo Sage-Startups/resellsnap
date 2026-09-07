@@ -6,7 +6,7 @@
  * an admin can iterate on a prompt without touching anyone's data, and a draft
  * can never run in production until it is explicitly published.
  */
-import { z } from 'zod';
+import { type z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getAIProvider } from '@/server/ai';
 import {

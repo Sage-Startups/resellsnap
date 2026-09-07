@@ -11,7 +11,7 @@ import {
   JobType,
   NotificationType,
   PhotoStatus,
-  Tone,
+  type Tone,
 } from '@/generated/prisma/enums';
 import type { Job } from '@/lib/models';
 import { prisma } from '@/lib/db';

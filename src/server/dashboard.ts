@@ -5,7 +5,7 @@
  * precomputed into a stale totals column, and numbers the seller typed are
  * always distinguishable from numbers an API supplied.
  */
-import { AIJobStatus, ItemStatus, PlatformKey } from '@/generated/prisma/enums';
+import { AIJobStatus, ItemStatus, type PlatformKey } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/db';
 import { getSettings } from './settings';
 

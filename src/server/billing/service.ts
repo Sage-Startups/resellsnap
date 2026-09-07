@@ -15,7 +15,7 @@ import {
 import { prisma } from '@/lib/db';
 import { getEnv } from '@/lib/env';
 import { logger, sanitizeError } from '@/lib/logger';
-import { grantCredits, resetMonthlyCredits } from '@/server/credits';
+import { expireMonthlyCredits, grantCredits, resetMonthlyCredits } from '@/server/credits';
 import { EMAIL_KEYS, sendTemplateEmail } from '@/server/email';
 import { getStripe } from './stripe';
 
@@ -412,8 +412,13 @@ async function onSubscriptionDeleted(subscription: Stripe.Subscription): Promise
   });
 
   // Monthly credits stop renewing, but purchased packs are untouched — the
-  // seller paid for those separately.
-  await prisma.workspace.update({ where: { id: workspaceId }, data: { monthlyCredits: 0 } });
+  // seller paid for those separately. This goes through the ledger so the
+  // authoritative record and the cached balance never diverge.
+  await expireMonthlyCredits({
+    workspaceId,
+    reason: 'Subscription ended',
+    idempotencyKey: `subscription_ended:${subscription.id}`,
+  });
 
   return { status: WebhookStatus.PROCESSED, detail: 'Subscription ended' };
 }

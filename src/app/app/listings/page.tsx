@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ExternalLink, Tags } from 'lucide-react';
 import {
-  Badge, Button, Card, CardContent, EmptyState, PageHeader,
+  Badge, Button, Card, EmptyState, PageHeader,
 } from '@/components/ui';
 import { ItemThumbnail } from '@/components/app/item-thumbnail';
 import { ItemStatusBadge } from '@/components/app/status-badge';

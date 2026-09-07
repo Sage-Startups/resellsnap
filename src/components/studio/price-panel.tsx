@@ -6,6 +6,7 @@ import { Info, Pencil } from 'lucide-react';
 import { Alert, Badge, Button, Input } from '@/components/ui';
 import { updatePriceAction } from '@/server/items/actions';
 import { formatMoney, parseMoneyToCents, calculateFees } from '@/lib/money';
+import { PRICE_SOURCE_LABELS } from '@/lib/price-labels';
 import { cn } from '@/lib/utils';
 
 export interface PriceRow {
@@ -28,12 +29,6 @@ const STRATEGY_LABELS = {
   MAXIMISE_RETURN: { label: 'Maximise return', hint: 'Highest price, longest wait' },
 } as const;
 
-const SOURCE_LABELS: Record<string, string> = {
-  MARKETPLACE_API: 'Official marketplace data',
-  USER_HISTORY: 'Your own sales history',
-  ADMIN_HEURISTIC: 'Category guideline',
-  AI_ESTIMATE: 'AI estimate — no sales data',
-};
 
 const CONFIDENCE_TONE: Record<string, 'success' | 'warning' | 'danger'> = {
   HIGH: 'success',
@@ -186,7 +181,7 @@ export function PricePanel({
           <div className="flex flex-wrap items-center gap-2">
             <Info className="size-3.5 text-muted" aria-hidden="true" />
             <span className="text-[12px] font-medium text-ink">
-              {SOURCE_LABELS[balanced.source] ?? balanced.source}
+              {PRICE_SOURCE_LABELS[balanced.source] ?? balanced.source}
             </span>
             <Badge tone={CONFIDENCE_TONE[balanced.confidence] ?? 'neutral'}>
               {balanced.confidence.toLowerCase()} confidence

@@ -33,8 +33,10 @@ export function ItemThumbnail({
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- signed, short-lived
-    // URLs from our own origin; next/image would cache them past expiry.
+    // Photos are served from our own proxy route behind an expiring signed URL,
+    // so next/image's optimizer would cache bytes past the point the URL is
+    // valid — and re-fetch them from a bucket that has since refused it.
+    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={`/api/photos?key=${encodeURIComponent(objectKey)}`}
       alt={alt}

@@ -15,19 +15,16 @@ import {
   ConfidenceLevel,
   FactSource,
   ItemStatus,
-  PlatformKey,
-  Tone,
+  type PlatformKey,
+  type Tone,
 } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import {
   AnalysisResultSchema,
-  ANALYSIS_JSON_SCHEMA,
   getAIProvider,
   MasterListingSchema,
-  MASTER_LISTING_JSON_SCHEMA,
   PlatformVariantSchema,
-  PLATFORM_VARIANT_JSON_SCHEMA,
   type AnalysisResult,
   type InferredField,
 } from '@/server/ai';

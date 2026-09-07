@@ -48,7 +48,7 @@ export function ExportMenu({
 
       if (status.ok && status.data?.status === 'READY' && status.data.downloadUrl) {
         // Navigate rather than fetch, so the browser's own download UI handles it.
-        window.location.href = status.data.downloadUrl;
+        window.location.assign(status.data.downloadUrl);
         setBusy(null);
         setOpen(false);
         return;

@@ -4,7 +4,7 @@ import { Badge, Card, Input, PageHeader } from '@/components/ui';
 import { AdminPagination, AdminTable } from '@/components/admin/admin-table';
 import { prisma } from '@/lib/db';
 import { requireStaff } from '@/server/session';
-import { Prisma } from '@/generated/prisma/client';
+import { type Prisma } from '@/generated/prisma/client';
 import { formatDate } from '@/lib/utils';
 
 export const metadata: Metadata = { title: 'Workspaces' };

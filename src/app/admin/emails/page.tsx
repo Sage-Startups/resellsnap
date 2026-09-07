@@ -7,6 +7,7 @@ import { Role } from '@/generated/prisma/enums';
 import { getEmailProvider } from '@/server/email';
 import { EMAIL_DEFINITIONS } from '@/server/email/templates';
 import { relativeTime } from '@/lib/utils';
+import { daysAgo } from '@/lib/time';
 
 export const metadata: Metadata = { title: 'Emails' };
 
@@ -18,7 +19,7 @@ export default async function AdminEmailsPage() {
     prisma.emailLog.findMany({ orderBy: { createdAt: 'desc' }, take: 30 }),
     prisma.emailLog.groupBy({
       by: ['status'],
-      where: { createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) } },
+      where: { createdAt: { gte: daysAgo(7) } },
       _count: { _all: true },
     }),
   ]);

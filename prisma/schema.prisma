@@ -709,6 +709,11 @@ model PromptVersion {
 
 /// Domain record for one unit of AI work. `Job` is how it is transported;
 /// this is what the admin AI operations console reads.
+/// A partial unique index — `ai_job_one_active_per_item`, created in a migration
+/// because Prisma cannot express a `WHERE` clause on an index — allows only one
+/// QUEUED or RUNNING job per item. It is what actually prevents a double-click
+/// from charging two credits; the application-level check is only there to give
+/// a friendlier message first.
 model AIJob {
   id     String      @id @default(cuid())
   kind   AIJobKind

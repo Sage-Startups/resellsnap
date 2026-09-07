@@ -1,7 +1,8 @@
-import { FlatCompat } from '@eslint/eslintrc';
+// `eslint-config-next` ships native flat configs from Next 16, so there is no
+// FlatCompat wrapper here — routing it through eslintrc compatibility fails to
+// validate and takes the whole lint run down with it.
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import tseslint from 'typescript-eslint';
-
-const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
 
 export default tseslint.config(
   {
@@ -16,8 +17,14 @@ export default tseslint.config(
       'src/generated/**',
     ],
   },
-  ...compat.extends('next/core-web-vitals'),
+  ...nextCoreWebVitals,
   ...tseslint.configs.recommended,
+  {
+    // eslint-plugin-react's automatic React version detection calls an ESLint 9
+    // context API that ESLint 10 removed, which throws while loading any react/*
+    // rule. Declaring the version skips detection entirely.
+    settings: { react: { version: '19.2' } },
+  },
   {
     rules: {
       '@typescript-eslint/no-unused-vars': [

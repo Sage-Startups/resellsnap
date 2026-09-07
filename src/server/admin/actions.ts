@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { CreditBucket, ModerationStatus, Role, UserStatus } from '@/generated/prisma/enums';
+import { type CreditBucket, type ModerationStatus, Role, UserStatus } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { sanitizeError } from '@/lib/logger';

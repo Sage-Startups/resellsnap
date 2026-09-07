@@ -50,7 +50,13 @@ export interface AdminOverview {
     canceledInRange: number;
     churnRate: number | null;
   };
-  revenue: { packRevenueCents: number; failedPayments: number };
+  /**
+   * Credit-pack *volume*, not money. The ledger records credits, not amounts,
+   * so a cents figure cannot be derived here — Stripe remains the source of
+   * truth for revenue, and the dashboard says so rather than showing a number
+   * we would be guessing at.
+   */
+  revenue: { packPurchases: number; failedPayments: number };
   credits: {
     granted: number;
     purchased: number;
@@ -297,9 +303,7 @@ export async function getAdminOverview(days = 30): Promise<AdminOverview> {
       churnRate: activeTotal === 0 ? null : canceledInRange / (activeTotal + canceledInRange),
     },
     revenue: {
-      // Pack revenue is derived from ledger entries; Stripe remains the source
-      // of truth for money actually collected.
-      packRevenueCents: 0,
+      packPurchases: packRevenue._count._all,
       failedPayments,
     },
     credits: {

@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { AppNav } from '@/components/app/app-nav';
 import { AccountMenu } from '@/components/app/account-menu';
 import { CreditPill } from '@/components/app/credit-pill';
-import { Alert } from '@/components/ui';
 import { requireWorkspace, isStaff } from '@/server/session';
 import { getSettings } from '@/server/settings';
 

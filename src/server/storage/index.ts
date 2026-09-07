@@ -73,7 +73,14 @@ export function buildDerivativeKey(originalKey: string, variant: 'thumb' | 'web'
 }
 
 export function buildExportKey(workspaceId: string, exportJobId: string, filename: string): string {
-  const safe = filename.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120) || 'export.bin';
+  const safe =
+    filename
+      .replace(/[^A-Za-z0-9._-]/g, '_')
+      // Collapse dot runs so a filename can never read as a traversal segment,
+      // even though the separators are already gone.
+      .replace(/\.{2,}/g, '.')
+      .replace(/^[._-]+/, '')
+      .slice(0, 120) || 'export.bin';
   return `workspaces/${workspaceId}/exports/${exportJobId}/${safe}`;
 }
 
@@ -89,6 +96,9 @@ export function assertKeyInWorkspace(objectKey: string, workspaceId: string): vo
   }
   for (const segment of objectKey.split('/')) {
     if (!SAFE_SEGMENT.test(segment)) throw new Error('Invalid object key segment');
+    // A segment made only of dots would be a relative path even after the
+    // separator checks above.
+    if (/^\.+$/.test(segment)) throw new Error('Invalid object key segment');
   }
   if (workspaceIdFromKey(objectKey) !== workspaceId) {
     throw new Error('Object key does not belong to this workspace');

@@ -5,7 +5,7 @@ import { AdminPagination, AdminTable } from '@/components/admin/admin-table';
 import { ItemModerationControls } from './item-controls';
 import { prisma } from '@/lib/db';
 import { hasRole, requireStaff } from '@/server/session';
-import { Prisma } from '@/generated/prisma/client';
+import { type Prisma } from '@/generated/prisma/client';
 import { Role, type ItemStatus } from '@/generated/prisma/enums';
 import { relativeTime } from '@/lib/utils';
 
