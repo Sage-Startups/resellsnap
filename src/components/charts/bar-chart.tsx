@@ -107,12 +107,19 @@ export function BarChart({
         />
       </svg>
 
+      {/* Thin the labels out rather than letting them overlap into mush.
+          Roughly eight are readable at any width; the rest are still available
+          in the table equivalent below. */}
       <div className="mt-2 flex justify-between text-[11px] text-muted">
-        {data.map((datum) => (
-          <span key={datum.label} className="flex-1 truncate text-center">
-            {datum.label}
-          </span>
-        ))}
+        {data.map((datum, index) => {
+          const stride = Math.max(1, Math.ceil(data.length / 8));
+          const show = index % stride === 0 || index === data.length - 1;
+          return (
+            <span key={datum.label} className="min-w-0 flex-1 truncate text-center">
+              {show ? datum.label : '\u00a0'}
+            </span>
+          );
+        })}
       </div>
 
       {/* The accessible equivalent. Visually hidden, fully readable. */}
