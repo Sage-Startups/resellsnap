@@ -1,0 +1,26 @@
+# Anything not needed to build the image. Keeping this tight makes builds
+# faster and keeps local secrets and customer content out of the image.
+node_modules
+.next
+.git
+.github
+coverage
+playwright-report
+test-results
+blob-report
+.playwright
+
+# Local secrets — never build these into an image.
+.env
+.env.*
+!.env.example
+
+# Local filesystem storage driver: uploaded photos and built exports.
+.storage
+.storage-test
+
+# Editor and OS noise
+.DS_Store
+.idea
+.vscode
+*.log

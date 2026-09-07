@@ -62,10 +62,12 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  // `standalone` produces the minimal server bundle the Docker image ships, but
-  // it is incompatible with `next start`. It is therefore opt-in and set only by
-  // the Dockerfile, so local development, CI and `pnpm start` all behave
-  // normally. See docs/deployment.md.
+  // `standalone` produces a minimal, traced server bundle. The shipped image
+  // does not use it — that image also runs the worker, which executes
+  // TypeScript from `src/` and needs the full production dependency tree — but
+  // it stays available for anyone deploying the web service on its own. It is
+  // opt-in because it is incompatible with `next start`, which local
+  // development, CI and the image itself all rely on.
   output: process.env.BUILD_STANDALONE === '1' ? 'standalone' : undefined,
   // Development only: the dev server refuses cross-origin HMR requests, which
   // breaks local testing against 127.0.0.1 rather than localhost.
