@@ -1,0 +1,1663 @@
+// ResellSnap AI — data model
+//
+// Conventions used throughout:
+//  * Money is stored as an integer number of minor units (cents) plus an ISO
+//    4217 currency code. There are no floats anywhere in the money path.
+//  * All timestamps are UTC (`@db.Timestamptz`).
+//  * State machines use explicit enums, never free-form strings.
+//  * Recoverable third-party secrets (OAuth tokens) live in `EncryptedToken`
+//    and are encrypted with AES-256-GCM. One-time tokens are hashed, not stored.
+//  * Sanitised third-party API metadata is kept separate from secret material.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  USER
+  SUPPORT
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETION_REQUESTED
+  DELETED
+}
+
+enum ItemStatus {
+  DRAFT
+  ANALYZING
+  READY
+  LISTED
+  SOLD
+  EXPIRED
+  ARCHIVED
+}
+
+enum PhotoStatus {
+  PENDING
+  UPLOADED
+  PROCESSED
+  REJECTED
+}
+
+enum ShippingPreference {
+  SHIPPING
+  LOCAL_PICKUP
+  BOTH
+}
+
+enum JobType {
+  ANALYZE_ITEM
+  GENERATE_LISTING
+  REGENERATE_VARIANT
+  PROCESS_PHOTO
+  BUILD_EXPORT
+  SEND_EMAIL
+  SYNC_MARKETPLACE
+  CLEANUP
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  DEAD_LETTER
+  CANCELLED
+}
+
+enum AIJobKind {
+  ANALYZE
+  GENERATE_MASTER
+  GENERATE_VARIANT
+  REGENERATE_FIELD
+}
+
+enum AIJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum ConfidenceLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+/// Where a piece of item information came from. Central to the product promise
+/// that a guess is never silently promoted to a fact.
+enum FactSource {
+  SELLER_CONFIRMED
+  PHOTO_EVIDENCE
+  AI_INFERENCE
+  NEEDS_CONFIRMATION
+}
+
+enum PlatformKey {
+  EBAY
+  VINTED
+  DEPOP
+  FACEBOOK_MARKETPLACE
+}
+
+enum ConnectionState {
+  NOT_CONFIGURED
+  EXPORT_ONLY
+  AVAILABLE
+  CONNECTED
+  EXPIRED
+  REAUTH_REQUIRED
+  ERROR
+}
+
+enum PublicationStatus {
+  PENDING
+  VALIDATING
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  ENDED
+}
+
+enum PriceStrategy {
+  QUICK_SALE
+  BALANCED
+  MAXIMISE_RETURN
+}
+
+enum PriceSource {
+  MARKETPLACE_API
+  USER_HISTORY
+  ADMIN_HEURISTIC
+  AI_ESTIMATE
+}
+
+enum Tone {
+  STRAIGHTFORWARD
+  FRIENDLY
+  VINTAGE
+  MINIMAL
+}
+
+enum PlanKind {
+  FREE
+  SUBSCRIPTION
+  CREDIT_PACK
+}
+
+enum SubscriptionStatus {
+  NONE
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  PAUSED
+}
+
+/// Credit ledger entry kinds. The ledger is append-only; a mistake is corrected
+/// with a compensating entry, never by editing or deleting history.
+enum CreditEntryKind {
+  SIGNUP_GRANT
+  PLAN_RENEWAL
+  PACK_PURCHASE
+  ADMIN_GRANT
+  ADMIN_REVERSAL
+  CONSUMPTION
+  REFUND
+  EXPIRY
+}
+
+/// Which bucket an entry moves. Monthly credits are spent before purchased ones.
+enum CreditBucket {
+  MONTHLY
+  PURCHASED
+}
+
+enum ExportFormat {
+  TEXT
+  JSON
+  CSV
+  PHOTO_ZIP
+}
+
+enum ExportStatus {
+  QUEUED
+  BUILDING
+  READY
+  FAILED
+  EXPIRED
+}
+
+enum ModerationStatus {
+  OPEN
+  REVIEWING
+  ACTIONED
+  DISMISSED
+}
+
+enum ModerationReason {
+  PROHIBITED_CATEGORY
+  SUSPECTED_COUNTERFEIT
+  UNSAFE_CONTENT
+  USER_REPORTED_OUTPUT
+  OTHER
+}
+
+enum NotificationType {
+  GENERATION_COMPLETE
+  GENERATION_FAILED
+  LOW_CREDITS
+  BILLING
+  CONNECTION_EXPIRED
+  SYSTEM
+}
+
+enum EmailStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  BOUNCED
+  COMPLAINED
+  FAILED
+  SUPPRESSED
+}
+
+enum WebhookSource {
+  STRIPE
+  EBAY
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+enum IncidentSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  MONITORING
+  RESOLVED
+}
+
+/// Controlled vocabulary for product analytics. Adding a value here is a
+/// deliberate act — it keeps the admin funnel numbers meaningful.
+enum AnalyticsEventName {
+  SIGNUP_COMPLETED
+  EMAIL_VERIFIED
+  ONBOARDING_STEP_COMPLETED
+  ITEM_CREATED
+  PHOTOS_UPLOADED
+  ANALYSIS_STARTED
+  ANALYSIS_COMPLETED
+  ANALYSIS_FAILED
+  LISTING_GENERATED
+  VARIANT_REGENERATED
+  LISTING_EXPORTED
+  LISTING_PUBLISHED
+  ITEM_MARKED_SOLD
+  CHECKOUT_STARTED
+  SUBSCRIPTION_STARTED
+  CREDIT_PACK_PURCHASED
+  CONNECTION_ESTABLISHED
+  DEMO_STARTED
+}
+
+// ---------------------------------------------------------------------------
+// Identity — Better Auth core tables plus product columns
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String     @id @default(cuid())
+  name          String
+  email         String     @unique
+  emailVerified Boolean    @default(false)
+  image         String?
+  role          Role       @default(USER)
+  status        UserStatus @default(ACTIVE)
+
+  suspendedAt       DateTime? @db.Timestamptz
+  suspendedReason   String?
+  deletionRequested DateTime? @db.Timestamptz
+  lastSeenAt        DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  sessions           Session[]
+  accounts           Account[]
+  memberships        WorkspaceMember[]
+  preference         UserPreference?
+  notificationPref   NotificationPreference?
+  notifications      Notification[]
+  auditLogs          AuditLog[]              @relation("AuditActor")
+  supportNotes       SupportNote[]           @relation("SupportNoteSubject")
+  authoredNotes      SupportNote[]           @relation("SupportNoteAuthor")
+  impersonationsMade Impersonation[]         @relation("ImpersonationActor")
+  impersonationsOf   Impersonation[]         @relation("ImpersonationTarget")
+  creditEntries      CreditLedger[]          @relation("CreditActor")
+  emailLogs          EmailLog[]
+
+  @@index([role])
+  @@index([status])
+  @@index([createdAt])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime @db.Timestamptz
+  ipAddress String?
+  userAgent String?
+
+  /// Set when this session was created through an audited admin impersonation.
+  impersonatedBy String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime? @db.Timestamptz
+  refreshTokenExpiresAt DateTime? @db.Timestamptz
+  scope                 String?
+  password              String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([identifier])
+  @@index([expiresAt])
+  @@map("verification")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+model Workspace {
+  id       String  @id @default(cuid())
+  name     String
+  slug     String  @unique
+  currency String  @default("USD")
+  timezone String  @default("UTC")
+  country  String  @default("US")
+  isDemo   Boolean @default(false)
+
+  /// Denormalised balances kept only as a fast read cache. The ledger in
+  /// `CreditLedger` is authoritative and every mutation recomputes these
+  /// inside the same transaction.
+  monthlyCredits   Int @default(0)
+  purchasedCredits Int @default(0)
+
+  onboardingState Json      @default("{}")
+  deletedAt       DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  members       WorkspaceMember[]
+  items         Item[]
+  jobs          Job[]
+  aiJobs        AIJob[]
+  connections   PlatformConnection[]
+  subscription  Subscription?
+  creditLedger  CreditLedger[]
+  exportJobs    ExportJob[]
+  saleRecords   SaleRecord[]
+  analytics     AnalyticsEvent[]
+  moderation    ModerationFlag[]
+  notifications Notification[]
+  oauthStates   OAuthState[]
+
+  @@index([deletedAt])
+  @@map("workspace")
+}
+
+model WorkspaceMember {
+  id   String        @id @default(cuid())
+  role WorkspaceRole @default(OWNER)
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_member")
+}
+
+model UserPreference {
+  id           String @id @default(cuid())
+  userId       String @unique
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timezone     String @default("UTC")
+  locale       String @default("en-US")
+  currency     String @default("USD")
+  defaultTone  Tone   @default(STRAIGHTFORWARD)
+  brandVoice   String?
+  measurementUnit String @default("in")
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@map("user_preference")
+}
+
+model NotificationPreference {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  emailGenerationComplete Boolean @default(true)
+  emailGenerationFailed   Boolean @default(true)
+  emailLowCredits         Boolean @default(true)
+  emailProductUpdates     Boolean @default(false)
+  inAppEnabled            Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@map("notification_preference")
+}
+
+// ---------------------------------------------------------------------------
+// Items and photos
+// ---------------------------------------------------------------------------
+
+model Item {
+  id     String     @id @default(cuid())
+  sku    String
+  title  String     @default("Untitled item")
+  status ItemStatus @default(DRAFT)
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdById String?
+
+  categoryHint String?
+  quantity     Int     @default(1)
+
+  acquisitionCostCents Int?
+  desiredMinPriceCents Int?
+  currency             String @default("USD")
+
+  shippingPreference ShippingPreference @default(SHIPPING)
+  country            String             @default("US")
+  notes              String?
+
+  coverPhotoId String?
+
+  /// Soft delete. Purged by the scheduled cleanup job after the retention window.
+  deletedAt DateTime? @db.Timestamptz
+
+  listedAt   DateTime? @db.Timestamptz
+  soldAt     DateTime? @db.Timestamptz
+  archivedAt DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  photos           ItemPhoto[]
+  facts            ItemFact[]
+  revisions        ItemRevision[]
+  analyses         AIAnalysis[]
+  aiJobs           AIJob[]
+  listing          Listing?
+  priceSuggestions PriceSuggestion[]
+  comparables      Comparable[]
+  saleRecord       SaleRecord?
+  statusEvents     ListingStatusEvent[]
+  publications     PublicationAttempt[]
+  externalListings ExternalListing[]
+  exportJobs       ExportJob[]
+  moderationFlags  ModerationFlag[]
+
+  @@unique([workspaceId, sku])
+  @@index([workspaceId, status])
+  @@index([workspaceId, createdAt])
+  @@index([deletedAt])
+  @@map("item")
+}
+
+model ItemPhoto {
+  id     String      @id @default(cuid())
+  itemId String
+  item   Item        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  status PhotoStatus @default(PENDING)
+
+  /// Storage object key. Always derived server-side from the workspace id — a
+  /// client-supplied key is never trusted.
+  objectKey      String  @unique
+  thumbnailKey   String?
+  contentType    String
+  byteSize       Int
+  width          Int?
+  height         Int?
+  checksumSha256 String?
+  position       Int     @default(0)
+
+  /// Quality signals produced by the photo processing job.
+  blurScore     Float?
+  brightness    Float?
+  isDuplicateOf String?
+  rejectReason  String?
+  exifStripped  Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([itemId, position])
+  @@index([status])
+  @@map("item_photo")
+}
+
+/// A single piece of knowledge about an item, tagged with where it came from.
+model ItemFact {
+  id     String @id @default(cuid())
+  itemId String
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  key        String
+  value      String
+  source     FactSource
+  confidence ConfidenceLevel?
+  /// Human-readable justification, e.g. "logo visible in photo 2".
+  evidence   String?
+  /// True once the seller has explicitly accepted or edited an inferred value.
+  confirmed  Boolean          @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([itemId, key])
+  @@index([itemId, source])
+  @@map("item_fact")
+}
+
+model ItemRevision {
+  id        String @id @default(cuid())
+  itemId    String
+  item      Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  authorId  String?
+  summary   String
+  snapshot  Json
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([itemId, createdAt])
+  @@map("item_revision")
+}
+
+// ---------------------------------------------------------------------------
+// Job queue (PostgreSQL-backed; no Redis)
+// ---------------------------------------------------------------------------
+
+/// The transport layer for background work. `SELECT ... FOR UPDATE SKIP LOCKED`
+/// gives us safe multi-worker claiming without another piece of infrastructure.
+model Job {
+  id     String    @id @default(cuid())
+  type   JobType
+  status JobStatus @default(QUEUED)
+
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  payload  Json
+  priority Int  @default(100)
+
+  attempts    Int @default(0)
+  maxAttempts Int @default(5)
+
+  runAt      DateTime  @default(now()) @db.Timestamptz
+  lockedAt   DateTime? @db.Timestamptz
+  lockedBy   String?
+  startedAt  DateTime? @db.Timestamptz
+  finishedAt DateTime? @db.Timestamptz
+
+  lastError      String?
+  correlationId  String?
+  /// Guarantees at-most-once enqueue for a logical unit of work.
+  idempotencyKey String? @unique
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  aiJob AIJob?
+
+  @@index([status, runAt, priority])
+  @@index([type, status])
+  @@index([workspaceId])
+  @@map("job")
+}
+
+// ---------------------------------------------------------------------------
+// AI
+// ---------------------------------------------------------------------------
+
+model PromptTemplate {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  name        String
+  description String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  versions          PromptVersion[]
+  publishedVersion  PromptVersion?  @relation("PublishedVersion", fields: [publishedVersionId], references: [id], onDelete: SetNull)
+  publishedVersionId String?        @unique
+
+  @@map("prompt_template")
+}
+
+/// Immutable once published. A draft can be edited and tested against fixtures;
+/// publishing snapshots it so every generated result is attributable.
+model PromptVersion {
+  id         String @id @default(cuid())
+  templateId String
+  template   PromptTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  version      Int
+  systemPrompt String
+  userTemplate String
+  /// JSON Schema handed to the model for structured output.
+  outputSchema Json
+  notes        String?
+
+  isPublished Boolean   @default(false)
+  publishedAt DateTime? @db.Timestamptz
+  publishedBy String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  publishedFor PromptTemplate? @relation("PublishedVersion")
+  aiJobs       AIJob[]
+  analyses     AIAnalysis[]
+
+  @@unique([templateId, version])
+  @@index([templateId, isPublished])
+  @@map("prompt_version")
+}
+
+/// Domain record for one unit of AI work. `Job` is how it is transported;
+/// this is what the admin AI operations console reads.
+model AIJob {
+  id     String      @id @default(cuid())
+  kind   AIJobKind
+  status AIJobStatus @default(QUEUED)
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  itemId      String?
+  item        Item?     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  jobId String? @unique
+  job   Job?    @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  promptVersionId String?
+  promptVersion   PromptVersion? @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
+
+  platform PlatformKey?
+
+  /// Set once a credit has been debited for this job, so a retry can never
+  /// debit twice and a terminal failure can refund exactly once.
+  creditEntryId String? @unique
+  creditRefunded Boolean @default(false)
+
+  correlationId String?
+  startedAt     DateTime? @db.Timestamptz
+  finishedAt    DateTime? @db.Timestamptz
+  durationMs    Int?
+  /// Sanitised error message. Never contains prompts, photos or secrets.
+  error         String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  usage    AIUsage[]
+  analysis AIAnalysis?
+
+  @@index([workspaceId, createdAt])
+  @@index([status, createdAt])
+  @@index([kind, status])
+  @@map("ai_job")
+}
+
+model AIAnalysis {
+  id      String @id @default(cuid())
+  itemId  String
+  item    Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  aiJobId String @unique
+  aiJob   AIJob  @relation(fields: [aiJobId], references: [id], onDelete: Cascade)
+
+  promptVersionId String?
+  promptVersion   PromptVersion? @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
+
+  model    String
+  provider String
+
+  /// Validated structured output, shaped by `AnalysisResultSchema`.
+  result Json
+
+  photoWarnings   Json @default("[]")
+  safetyFlags     Json @default("[]")
+  suggestedQuestions Json @default("[]")
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([itemId, createdAt])
+  @@map("ai_analysis")
+}
+
+model AIUsage {
+  id      String @id @default(cuid())
+  aiJobId String
+  aiJob   AIJob  @relation(fields: [aiJobId], references: [id], onDelete: Cascade)
+
+  provider String
+  model    String
+  operation String
+
+  inputTokens  Int @default(0)
+  outputTokens Int @default(0)
+  imageCount   Int @default(0)
+
+  /// Internal cost estimate in USD micro-units (1/1,000,000 USD) so small
+  /// per-call costs stay exact in integer arithmetic.
+  estimatedCostMicros Int @default(0)
+  durationMs          Int @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([createdAt])
+  @@index([aiJobId])
+  @@map("ai_usage")
+}
+
+// ---------------------------------------------------------------------------
+// Listings
+// ---------------------------------------------------------------------------
+
+model Listing {
+  id     String @id @default(cuid())
+  itemId String @unique
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  tone Tone @default(STRAIGHTFORWARD)
+
+  title            String
+  description      String
+  conditionSummary String
+  defectDisclosure String?
+  includedItems    String?
+  measurements     String?
+  attributes       Json   @default("{}")
+  searchTerms      Json   @default("[]")
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  variants  ListingVariant[]
+  revisions ListingRevision[]
+
+  @@map("listing")
+}
+
+model ListingVariant {
+  id        String      @id @default(cuid())
+  listingId String
+  listing   Listing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  platform  PlatformKey
+
+  title       String
+  description String
+  /// Platform-shaped payload: category suggestion, item specifics, hashtags,
+  /// condition descriptor, policy selections and so on.
+  fields      Json   @default("{}")
+  tone        Tone   @default(STRAIGHTFORWARD)
+
+  /// Validation problems detected against the platform template.
+  issues     Json    @default("[]")
+  isComplete Boolean @default(false)
+
+  templateVersion Int? 
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  revisions ListingRevision[]
+
+  @@unique([listingId, platform])
+  @@map("listing_variant")
+}
+
+model ListingRevision {
+  id        String  @id @default(cuid())
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  variantId String?
+  variant   ListingVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  platform PlatformKey?
+  authorId String?
+  /// "ai" for generated revisions, "user" for manual edits.
+  origin   String      @default("user")
+  summary  String
+  snapshot Json
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([listingId, createdAt])
+  @@index([variantId, createdAt])
+  @@map("listing_revision")
+}
+
+model ListingStatusEvent {
+  id       String      @id @default(cuid())
+  itemId   String
+  item     Item        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  platform PlatformKey?
+
+  fromStatus ItemStatus?
+  toStatus   ItemStatus
+  actorId    String?
+  /// "user", "system", "marketplace_sync"
+  source     String      @default("user")
+  note       String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([itemId, createdAt])
+  @@map("listing_status_event")
+}
+
+// ---------------------------------------------------------------------------
+// Pricing
+// ---------------------------------------------------------------------------
+
+model PriceSuggestion {
+  id     String @id @default(cuid())
+  itemId String
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  strategy PriceStrategy
+  currency String        @default("USD")
+
+  amountCents Int
+  lowCents    Int?
+  highCents   Int?
+
+  source     PriceSource
+  confidence ConfidenceLevel
+  /// Plain-English basis shown to the seller, e.g. "Based on 12 completed eBay
+  /// sales for this category in the last 90 days."
+  explanation String
+  comparableCount Int      @default(0)
+  observedAt      DateTime? @db.Timestamptz
+
+  /// True once the seller has edited the number; we then stop overwriting it.
+  userEdited Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([itemId, strategy])
+  @@map("price_suggestion")
+}
+
+/// A real observed comparable. Only ever written from an approved marketplace
+/// API or from the seller's own completed sales — never scraped, never invented.
+model Comparable {
+  id     String @id @default(cuid())
+  itemId String
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  platform    PlatformKey
+  source      PriceSource
+  title       String
+  priceCents  Int
+  currency    String      @default("USD")
+  condition   String?
+  soldAt      DateTime?   @db.Timestamptz
+  externalRef String?
+  url         String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([itemId])
+  @@map("comparable")
+}
+
+model SaleRecord {
+  id     String @id @default(cuid())
+  itemId String @unique
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  platform      PlatformKey
+  currency      String      @default("USD")
+  salePriceCents Int
+  feesCents      Int        @default(0)
+  shippingCents  Int        @default(0)
+  soldAt         DateTime   @db.Timestamptz
+
+  /// Distinguishes numbers the seller typed from numbers an official API gave us.
+  isApiSynced Boolean @default(false)
+  externalRef String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([workspaceId, soldAt])
+  @@map("sale_record")
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace platforms and connections
+// ---------------------------------------------------------------------------
+
+model Platform {
+  id       String      @id @default(cuid())
+  key      PlatformKey @unique
+  name     String
+  /// Public-facing seller URL used by the "Open <platform>" export action.
+  sellerUrl String
+  enabled  Boolean     @default(true)
+  sortOrder Int        @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  capability  PlatformCapability?
+  templates   PlatformTemplate[]
+  connections PlatformConnection[]
+
+  @@map("platform")
+}
+
+/// Admin-controlled capability flags. The UI derives every button from these —
+/// there is no hard-coded "Publish to Depop" anywhere in the product.
+model PlatformCapability {
+  id         String      @id @default(cuid())
+  platformId String      @unique
+  platform   Platform    @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  canConnect         Boolean @default(false)
+  canCreateDraft     Boolean @default(false)
+  canPublish         Boolean @default(false)
+  canUpdate          Boolean @default(false)
+  canEnd             Boolean @default(false)
+  canReadListings    Boolean @default(false)
+  canReadOrders      Boolean @default(false)
+  canFetchComparables Boolean @default(false)
+
+  /// Operator kill switch, independent of credentials.
+  killSwitch Boolean @default(false)
+  /// Why direct publishing is unavailable, shown verbatim in the UI.
+  unavailableReason String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@map("platform_capability")
+}
+
+model PlatformTemplate {
+  id         String      @id @default(cuid())
+  platformId String
+  platform   Platform    @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  version    Int         @default(1)
+  isActive   Boolean     @default(true)
+
+  titleMaxLength       Int  @default(80)
+  descriptionMaxLength Int  @default(4000)
+  maxPhotos            Int  @default(12)
+  maxHashtags          Int  @default(0)
+
+  /// Field names the variant must fill before it counts as complete.
+  requiredFields Json @default("[]")
+  /// Tone and copy rules injected into the generation prompt as data.
+  toneRules      String
+  /// Estimated marketplace fee model, editable by admins.
+  feePercentBps  Int  @default(0)
+  feeFixedCents  Int  @default(0)
+  /// Supported export formats for this platform.
+  exportFormats  Json @default("[\"TEXT\",\"JSON\",\"CSV\",\"PHOTO_ZIP\"]")
+  regions        Json @default("[\"US\"]")
+  guidance       String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([platformId, version])
+  @@index([platformId, isActive])
+  @@map("platform_template")
+}
+
+model PlatformConnection {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  platformId  String
+  platform    Platform  @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  state ConnectionState @default(NOT_CONFIGURED)
+
+  /// Non-secret account identity for display, e.g. an eBay username.
+  externalAccountId String?
+  externalUsername  String?
+  environment       String  @default("sandbox")
+  marketplaceId     String?
+  scopes            Json    @default("[]")
+
+  /// Sanitised readiness metadata — business policy ids, inventory location.
+  setupMetadata Json @default("{}")
+
+  expiresAt   DateTime? @db.Timestamptz
+  lastSyncAt  DateTime? @db.Timestamptz
+  lastError   String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  tokens           EncryptedToken[]
+  publications     PublicationAttempt[]
+  externalListings ExternalListing[]
+  externalEvents   ExternalEvent[]
+
+  @@unique([workspaceId, platformId])
+  @@index([state])
+  @@map("platform_connection")
+}
+
+/// OAuth CSRF state + PKCE verifier. Single-use and short-lived.
+model OAuthState {
+  id          String    @id @default(cuid())
+  state       String    @unique
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  platform    PlatformKey
+
+  codeVerifier String?
+  redirectTo   String?
+  expiresAt    DateTime  @db.Timestamptz
+  consumedAt   DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([expiresAt])
+  @@map("oauth_state")
+}
+
+/// AES-256-GCM ciphertext for recoverable third-party secrets. The plaintext
+/// never leaves `src/lib/crypto.ts` and is never logged.
+model EncryptedToken {
+  id           String             @id @default(cuid())
+  connectionId String
+  connection   PlatformConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  /// "access" | "refresh"
+  kind       String
+  ciphertext String
+  iv         String
+  authTag    String
+  keyVersion Int    @default(1)
+
+  expiresAt DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([connectionId, kind])
+  @@map("encrypted_token")
+}
+
+model PublicationAttempt {
+  id           String             @id @default(cuid())
+  itemId       String
+  item         Item               @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  connectionId String?
+  connection   PlatformConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  platform     PlatformKey
+
+  status PublicationStatus @default(PENDING)
+
+  /// Prevents a double-publish on retry, refresh or duplicate submit.
+  idempotencyKey String @unique
+
+  /// Sanitised request/response metadata — correlation ids, status codes,
+  /// error codes. Never tokens, never full payloads.
+  requestMetadata  Json @default("{}")
+  responseMetadata Json @default("{}")
+
+  externalListingId String?
+  externalUrl       String?
+  errorCode         String?
+  errorMessage      String?
+
+  startedAt   DateTime? @db.Timestamptz
+  completedAt DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([itemId, createdAt])
+  @@index([status])
+  @@map("publication_attempt")
+}
+
+model ExternalListing {
+  id           String             @id @default(cuid())
+  itemId       String
+  item         Item               @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  connectionId String
+  connection   PlatformConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  platform     PlatformKey
+
+  externalId String
+  sku        String?
+  url        String?
+  state      String  @default("ACTIVE")
+
+  priceCents Int?
+  currency   String @default("USD")
+  quantity   Int    @default(1)
+
+  lastSyncAt DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([connectionId, externalId])
+  @@index([itemId])
+  @@map("external_listing")
+}
+
+/// Inbound marketplace notifications, deduplicated for idempotent handling.
+model ExternalEvent {
+  id           String             @id @default(cuid())
+  connectionId String?
+  connection   PlatformConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  platform     PlatformKey
+
+  externalEventId String
+  eventType       String
+  payloadSummary  Json     @default("{}")
+  processedAt     DateTime? @db.Timestamptz
+  error           String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@unique([platform, externalEventId])
+  @@index([processedAt])
+  @@map("external_event")
+}
+
+// ---------------------------------------------------------------------------
+// Billing and credits
+// ---------------------------------------------------------------------------
+
+model Plan {
+  id       String   @id @default(cuid())
+  key      String   @unique
+  name     String
+  kind     PlanKind
+  tagline  String?
+  description String?
+
+  priceCents Int    @default(0)
+  currency   String @default("USD")
+  interval   String? // "month" for subscriptions, null for packs
+
+  /// Credits granted: per billing period for subscriptions, one-off for packs.
+  creditsGranted Int @default(0)
+
+  stripePriceId   String?
+  stripeProductId String?
+
+  isVisible Boolean @default(true)
+  isDefault Boolean @default(false)
+  sortOrder Int     @default(0)
+  features  Json    @default("[]")
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  entitlements  PlanEntitlement[]
+  subscriptions Subscription[]
+
+  @@index([kind, isVisible])
+  @@map("plan")
+}
+
+model PlanEntitlement {
+  id     String @id @default(cuid())
+  planId String
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  key         String
+  boolValue   Boolean?
+  intValue    Int?
+  stringValue String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([planId, key])
+  @@map("plan_entitlement")
+}
+
+model Subscription {
+  id          String    @id @default(cuid())
+  workspaceId String    @unique
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  planId String?
+  plan   Plan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  status SubscriptionStatus @default(NONE)
+
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+
+  currentPeriodStart DateTime? @db.Timestamptz
+  currentPeriodEnd   DateTime? @db.Timestamptz
+  cancelAtPeriodEnd  Boolean   @default(false)
+  canceledAt         DateTime? @db.Timestamptz
+  endedAt            DateTime? @db.Timestamptz
+
+  /// Guards the monthly credit reset so a webhook replay cannot double-grant.
+  lastCreditResetAt DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([status])
+  @@map("subscription")
+}
+
+/// Append-only credit ledger. `delta` is positive for grants and negative for
+/// consumption; the workspace balance is the sum of its entries.
+model CreditLedger {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  kind   CreditEntryKind
+  bucket CreditBucket
+  delta  Int
+
+  /// Balance of this bucket immediately after the entry was applied.
+  balanceAfter Int
+
+  reason String?
+  /// Set for ADMIN_GRANT / ADMIN_REVERSAL; required by the admin UI.
+  actorId String?
+  actor   User?  @relation("CreditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  itemId  String?
+  aiJobId String?
+
+  /// The single mechanism preventing double debit on retry, refresh, webhook
+  /// replay or concurrent requests.
+  idempotencyKey String @unique
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([workspaceId, createdAt])
+  @@index([kind])
+  @@map("credit_ledger")
+}
+
+model StripeEvent {
+  id             String   @id @default(cuid())
+  stripeEventId  String   @unique
+  type           String
+  status         WebhookStatus @default(RECEIVED)
+  processedAt    DateTime? @db.Timestamptz
+  error          String?
+  payloadSummary Json     @default("{}")
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([type, createdAt])
+  @@map("stripe_event")
+}
+
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+
+model ExportJob {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  itemId      String?
+  item        Item?     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  platform PlatformKey?
+  format   ExportFormat
+  status   ExportStatus @default(QUEUED)
+
+  error String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  artifacts DownloadArtifact[]
+
+  @@index([workspaceId, createdAt])
+  @@map("export_job")
+}
+
+model DownloadArtifact {
+  id          String    @id @default(cuid())
+  exportJobId String
+  exportJob   ExportJob @relation(fields: [exportJobId], references: [id], onDelete: Cascade)
+
+  objectKey   String @unique
+  filename    String
+  contentType String
+  byteSize    Int    @default(0)
+
+  /// Cleaned up by the scheduled retention job.
+  expiresAt DateTime @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([expiresAt])
+  @@map("download_artifact")
+}
+
+// ---------------------------------------------------------------------------
+// Operations, content and configuration
+// ---------------------------------------------------------------------------
+
+model FeatureFlag {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  description String
+  enabled     Boolean @default(false)
+  /// Optional plan keys the flag is limited to. Empty means "all plans".
+  planKeys    Json    @default("[]")
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@map("feature_flag")
+}
+
+model AppSetting {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  value       Json
+  description String?
+  /// Settings marked sensitive show as "configured"/"missing" only.
+  isSensitive Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@map("app_setting")
+}
+
+model ContentBlock {
+  id       String  @id @default(cuid())
+  key      String  @unique
+  title    String?
+  body     String
+  /// "announcement" | "faq" | "help" | "legal"
+  category String  @default("announcement")
+  isActive Boolean @default(true)
+  sortOrder Int    @default(0)
+  version  Int     @default(1)
+  effectiveAt DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([category, isActive, sortOrder])
+  @@map("content_block")
+}
+
+model EmailTemplate {
+  id      String  @id @default(cuid())
+  key     String  @unique
+  name    String
+  subject String
+  /// Body uses `{{token}}` placeholders resolved by the email service.
+  body    String
+  /// Essential security/billing mail ignores notification preferences.
+  isEssential Boolean @default(false)
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  logs EmailLog[]
+
+  @@map("email_template")
+}
+
+model EmailLog {
+  id         String @id @default(cuid())
+  templateId String?
+  template   EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  userId     String?
+  user       User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  templateKey String
+  toEmail     String
+  subject     String
+  status      EmailStatus @default(QUEUED)
+  provider    String      @default("resend")
+  providerMessageId String?
+  error       String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([status, createdAt])
+  @@index([toEmail])
+  @@map("email_log")
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type    NotificationType
+  title   String
+  body    String
+  href    String?
+  readAt  DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([userId, readAt, createdAt])
+  @@map("notification")
+}
+
+model ModerationFlag {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  itemId      String?
+  item        Item?     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  reason      ModerationReason
+  status      ModerationStatus @default(OPEN)
+  detail      String
+  /// "ai_safety" | "user_report" | "admin"
+  raisedBy    String           @default("ai_safety")
+  reporterId  String?
+  resolvedBy  String?
+  resolvedAt  DateTime?        @db.Timestamptz
+  resolution  String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([status, createdAt])
+  @@map("moderation_flag")
+}
+
+model SupportNote {
+  id       String @id @default(cuid())
+  subjectUserId String
+  subjectUser   User   @relation("SupportNoteSubject", fields: [subjectUserId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User   @relation("SupportNoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  body     String
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([subjectUserId, createdAt])
+  @@map("support_note")
+}
+
+model AuditLog {
+  id      String @id @default(cuid())
+  actorId String?
+  actor   User?  @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  action     String
+  targetType String
+  targetId   String?
+  reason     String?
+
+  ipAddress String?
+  userAgent String?
+
+  /// Before/after snapshots with sensitive values redacted before writing.
+  beforeData Json?
+  afterData  Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+  @@index([action, createdAt])
+  @@map("audit_log")
+}
+
+model Impersonation {
+  id       String @id @default(cuid())
+  actorId  String
+  actor    User   @relation("ImpersonationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  targetId String
+  target   User   @relation("ImpersonationTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  reason    String
+  sessionId String?
+  expiresAt DateTime  @db.Timestamptz
+  endedAt   DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([actorId, createdAt])
+  @@map("impersonation")
+}
+
+model WebhookEvent {
+  id       String        @id @default(cuid())
+  source   WebhookSource
+  eventId  String
+  eventType String
+  status   WebhookStatus @default(RECEIVED)
+  attempts Int           @default(0)
+
+  /// Sanitised metadata only — never the raw signed body.
+  payloadSummary Json @default("{}")
+  error          String?
+  processedAt    DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([source, eventId])
+  @@index([status, createdAt])
+  @@map("webhook_event")
+}
+
+model SystemIncident {
+  id       String           @id @default(cuid())
+  service  String
+  severity IncidentSeverity @default(WARNING)
+  status   IncidentStatus   @default(OPEN)
+  title    String
+  detail   String?
+  resolvedAt DateTime?      @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([status, createdAt])
+  @@map("system_incident")
+}
+
+model AnalyticsEvent {
+  id          String             @id @default(cuid())
+  name        AnalyticsEventName
+  workspaceId String?
+  workspace   Workspace?         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String?
+
+  properties Json @default("{}")
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([name, createdAt])
+  @@index([workspaceId, createdAt])
+  @@map("analytics_event")
+}
+
+/// Fixed-window rate limiting. Kept in PostgreSQL so the deployment stays a
+/// single database plus a worker — no Redis required.
+model RateLimit {
+  id        String   @id @default(cuid())
+  bucketKey String   @unique
+  count     Int      @default(0)
+  expiresAt DateTime @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([expiresAt])
+  @@map("rate_limit")
+}

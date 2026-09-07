@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next
+.next/
+out/
+build/
+dist/
+next-env.d.ts
+
+# testing
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# env — never commit real secrets
+.env
+.env.local
+.env.*.local
+.env.production
+!.env.example
+
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+.vscode/
+.idea/
+tmp/
+src/generated/
