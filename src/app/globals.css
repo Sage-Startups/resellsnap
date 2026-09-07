@@ -1,0 +1,178 @@
+@import 'tailwindcss';
+
+/*
+ * ResellSnap AI design tokens.
+ *
+ * The palette is deliberately quiet: warm off-white paper, near-black ink,
+ * muted stone surfaces, and a single electric-lime accent used sparingly for
+ * the primary action and nothing else. Status colours are reserved for actual
+ * status. No gradients-as-decoration, no glassmorphism, no neon glow.
+ */
+@theme {
+  /* Paper and ink */
+  --color-bone: #faf9f5;
+  --color-paper: #ffffff;
+  --color-ink: #14140f;
+  --color-ink-soft: #3d3c35;
+  --color-muted: #6f6d63;
+  --color-subtle: #94918a;
+
+  /* Stone surfaces and dividers */
+  --color-stone-50: #f5f3ee;
+  --color-stone-100: #ebe8e0;
+  --color-stone-200: #e3e0d6;
+  --color-stone-300: #d3cfc2;
+  --color-stone-400: #b8b3a4;
+
+  /* The one accent */
+  --color-lime: #c8f000;
+  --color-lime-deep: #a8cc00;
+  --color-lime-wash: #f2fbd0;
+
+  /* Status — used only for status */
+  --color-success: #1f7a4d;
+  --color-success-wash: #e8f5ee;
+  --color-warning: #9a6212;
+  --color-warning-wash: #fdf3e2;
+  --color-danger: #a92c1f;
+  --color-danger-wash: #fbeceb;
+  --color-info: #2a5b8f;
+  --color-info-wash: #eaf1f9;
+
+  /* Typography */
+  --font-sans: 'InterVariable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'InterVariable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Refined shadows — barely there */
+  --shadow-hair: 0 1px 2px rgb(20 20 15 / 0.05);
+  --shadow-card: 0 1px 3px rgb(20 20 15 / 0.06), 0 1px 2px -1px rgb(20 20 15 / 0.04);
+  --shadow-raised: 0 4px 16px -4px rgb(20 20 15 / 0.10), 0 2px 6px -2px rgb(20 20 15 / 0.06);
+  --shadow-float: 0 12px 40px -12px rgb(20 20 15 / 0.18), 0 4px 12px -4px rgb(20 20 15 / 0.08);
+
+  --radius-card: 0.75rem;
+}
+
+/*
+ * The display face is loaded from a locally bundled variable font so nothing
+ * is fetched from a third-party CDN at runtime and the licence travels with the
+ * repository. See public/fonts/README.md.
+ */
+@font-face {
+  font-family: 'InterVariable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: local('Inter var'), local('Inter');
+}
+
+@layer base {
+  * {
+    border-color: var(--color-stone-200);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-bone);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* A single, consistent, always-visible focus treatment. */
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: var(--color-lime-wash);
+    color: var(--color-ink);
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.021em;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Respect the user's motion preference rather than merely shortening. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Skip link, visible only when focused. */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    z-index: 100;
+  }
+  .skip-link:focus {
+    left: 1rem;
+    top: 1rem;
+    padding: 0.625rem 1rem;
+    background: var(--color-ink);
+    color: var(--color-bone);
+    border-radius: 0.5rem;
+  }
+
+  /* Hairline divider used throughout the marketing site and app chrome. */
+  .rule {
+    height: 1px;
+    background: linear-gradient(
+      to right,
+      transparent,
+      var(--color-stone-200) 12%,
+      var(--color-stone-200) 88%,
+      transparent
+    );
+  }
+
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--color-stone-100) 25%,
+      var(--color-stone-50) 37%,
+      var(--color-stone-100) 63%
+    );
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: 0 0; }
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .grid-paper {
+    background-image:
+      linear-gradient(var(--color-stone-100) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-stone-100) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+}

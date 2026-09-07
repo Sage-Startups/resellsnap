@@ -62,7 +62,14 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  // `standalone` produces the minimal server bundle the Docker image ships, but
+  // it is incompatible with `next start`. It is therefore opt-in and set only by
+  // the Dockerfile, so local development, CI and `pnpm start` all behave
+  // normally. See docs/deployment.md.
+  output: process.env.BUILD_STANDALONE === '1' ? 'standalone' : undefined,
+  // Development only: the dev server refuses cross-origin HMR requests, which
+  // breaks local testing against 127.0.0.1 rather than localhost.
+  allowedDevOrigins: ['127.0.0.1', 'localhost'],
   reactStrictMode: true,
   poweredByHeader: false,
   serverExternalPackages: ['sharp', '@prisma/client'],

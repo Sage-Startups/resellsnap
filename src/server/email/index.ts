@@ -271,12 +271,23 @@ async function log(input: {
   providerMessageId?: string;
   error?: string;
 }): Promise<void> {
+  // Better Auth sends the verification email from inside the sign-up
+  // transaction, so the user row may not be visible to this connection yet.
+  // Recording the log without the association beats failing the send.
+  let userId = input.userId ?? null;
+  if (userId) {
+    const exists = await prisma.user
+      .findUnique({ where: { id: userId }, select: { id: true } })
+      .catch(() => null);
+    if (!exists) userId = null;
+  }
+
   try {
     await prisma.emailLog.create({
       data: {
         templateKey: input.key,
         templateId: input.templateId,
-        userId: input.userId ?? null,
+        userId,
         toEmail: input.to,
         subject: input.subject,
         status: input.status ?? EmailStatus.QUEUED,

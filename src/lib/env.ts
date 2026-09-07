@@ -105,8 +105,34 @@ function formatIssues(error: z.ZodError): string {
 
 let cached: AppEnv | null = null;
 
+/**
+ * A production *build* has no runtime secrets — the Docker image is built long
+ * before it is given a database or an S3 bucket. Next.js sets `NEXT_PHASE`
+ * during `next build`, which lets us validate shape without demanding values
+ * that only exist at deploy time. The full production checks still run when the
+ * server actually starts.
+ */
+function isBuildPhase(): boolean {
+  return (
+    process.env.NEXT_PHASE === 'phase-production-build' ||
+    process.env.SKIP_ENV_VALIDATION === '1'
+  );
+}
+
+/** Placeholders used only during a build, never at runtime. */
+const BUILD_PLACEHOLDERS: Record<string, string> = {
+  DATABASE_URL: 'postgresql://build:build@127.0.0.1:5432/build',
+  BETTER_AUTH_SECRET: 'build-time-placeholder-secret-value-not-used-at-runtime',
+  TOKEN_ENCRYPTION_KEY: '0'.repeat(64),
+};
+
 function build(): AppEnv {
-  const parsed = baseSchema.safeParse(process.env);
+  const buildPhase = isBuildPhase();
+  const source: NodeJS.ProcessEnv = buildPhase
+    ? { ...BUILD_PLACEHOLDERS, ...process.env }
+    : process.env;
+
+  const parsed = baseSchema.safeParse(source);
 
   if (!parsed.success) {
     throw new Error(
@@ -116,7 +142,7 @@ function build(): AppEnv {
   }
 
   const value = parsed.data;
-  const isProduction = value.NODE_ENV === 'production';
+  const isProduction = value.NODE_ENV === 'production' && !buildPhase;
 
   // Production-only requirements. Keeping these out of the base schema means
   // local development and CI stay frictionless while production stays strict.
