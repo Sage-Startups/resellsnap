@@ -32,3 +32,8 @@ blob-report/
 .idea/
 tmp/
 src/generated/
+
+# local filesystem storage driver (development only) — uploaded photos and
+# built exports are customer content and never belong in the repository
+.storage/
+.storage-test/

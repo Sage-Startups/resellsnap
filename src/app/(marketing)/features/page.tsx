@@ -97,6 +97,7 @@ export default function FeaturesPage() {
     <>
       <Section>
         <SectionHeading
+          level={1}
           eyebrow="Features"
           title="Everything between a pile of photos and a live listing"
           description="The interesting work is not writing a paragraph. It is knowing what you may honestly claim, what each marketplace requires, and what the item is actually worth."

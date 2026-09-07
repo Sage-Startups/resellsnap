@@ -97,6 +97,18 @@ export const auth = betterAuth({
     enabled: true,
     window: 60,
     max: 60,
+    // Better Auth applies a much tighter built-in rule to the credential
+    // routes, which is right in production and impossible to drive an
+    // end-to-end suite through from a single address. `AUTH_RATE_LIMIT` is
+    // rejected outright when the app really is running in production.
+    customRules:
+      env.AUTH_RATE_LIMIT === 'relaxed'
+        ? {
+            '/sign-in/email': { window: 60, max: 100 },
+            '/sign-up/email': { window: 60, max: 100 },
+            '/forget-password': { window: 60, max: 100 },
+          }
+        : undefined,
   },
 
   databaseHooks: {

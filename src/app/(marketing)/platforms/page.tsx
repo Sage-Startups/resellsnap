@@ -47,6 +47,7 @@ export default function PlatformsPage() {
     <>
       <Section>
         <SectionHeading
+          level={1}
           eyebrow="Platforms"
           title="Four marketplaces, two very different levels of access"
           description="Marketplace APIs are not equal, and pretending otherwise puts your seller account at risk. Here is exactly what is possible today."

@@ -77,7 +77,13 @@ export function WizardShell({
 
         <div className="sm:hidden">
           <div className="flex items-center justify-between">
-            <p className="text-[13px] font-semibold text-ink">{current?.label}</p>
+            {/*
+              A heading, not a paragraph: the wide-screen `h2` below is
+              `display: none` here, which removes it from the accessibility tree
+              altogether. Without this the phone — the device most sellers
+              actually photograph an item on — has no heading for the step.
+            */}
+            <h2 className="text-[13px] font-semibold text-ink">{current?.label}</h2>
             <p className="text-[12px] text-muted">
               Step {currentIndex + 1} of {steps.length}
             </p>

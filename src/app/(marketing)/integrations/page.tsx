@@ -52,6 +52,7 @@ export default async function IntegrationsPage() {
     <>
       <Section>
         <SectionHeading
+          level={1}
           eyebrow="Integrations"
           title="What is connected, and what that actually means"
           description="Every badge below is derived from this deployment's real configuration and capability flags, not from a marketing decision."

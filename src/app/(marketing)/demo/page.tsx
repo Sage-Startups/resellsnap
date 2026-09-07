@@ -79,6 +79,7 @@ export default async function DemoPage() {
     <>
       <Section className="pb-8">
         <SectionHeading
+          level={1}
           eyebrow="Interactive demo — sample data"
           title="The whole flow, without signing up"
           description="Pick a fictional item and walk from photos to four marketplace drafts. Everything runs in your browser: no account, no upload, no AI cost, and nothing is saved."

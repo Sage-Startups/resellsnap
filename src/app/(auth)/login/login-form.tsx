@@ -43,6 +43,11 @@ export function LoginForm() {
         setNeedsVerification(true);
         setError('Confirm your email address before signing in. We have sent you a fresh link.');
         await authClient.sendVerificationEmail({ email, callbackURL: '/app' }).catch(() => undefined);
+      } else if (signInError.status === 429) {
+        // Telling someone their password is wrong when they have actually been
+        // rate limited sends them round the loop again — more attempts, a
+        // longer lockout, and the belief that their account is broken.
+        setError('Too many sign-in attempts. Please wait a minute and try again.');
       } else {
         setError('That email and password combination did not work. Please try again.');
       }

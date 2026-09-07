@@ -18,6 +18,7 @@ export default async function ContactPage() {
       <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr]">
         <div>
           <SectionHeading
+            level={1}
             eyebrow="Contact"
             title="Talk to a person"
             description="We read everything and reply within one working day."

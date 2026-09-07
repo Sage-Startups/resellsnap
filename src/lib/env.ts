@@ -43,6 +43,14 @@ const baseSchema = z.object({
     .string()
     .regex(/^[0-9a-fA-F]{64}$/, 'must be 64 hex characters (32 bytes)'),
 
+  /**
+   * Relaxes Better Auth's sign-in and sign-up rate limits so an end-to-end
+   * suite can drive the real forms repeatedly from one address. Refused in
+   * production, where the limits are the only brute-force protection on those
+   * routes.
+   */
+  AUTH_RATE_LIMIT: z.enum(['strict', 'relaxed']).default('strict'),
+
   AI_PROVIDER: z.enum(['openai', 'fake']).default('openai'),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_VISION_MODEL: z.string().default('gpt-4.1-mini'),
@@ -165,6 +173,9 @@ function build(): AppEnv {
     // production, even by accident.
     if (value.AI_PROVIDER === 'fake') {
       missing.push('AI_PROVIDER="fake" is not permitted in production');
+    }
+    if (value.AUTH_RATE_LIMIT === 'relaxed') {
+      missing.push('AUTH_RATE_LIMIT="relaxed" is not permitted in production');
     }
     if (missing.length > 0) {
       throw new Error(`Invalid production environment:\n${missing.map((m) => `  • ${m}`).join('\n')}`);

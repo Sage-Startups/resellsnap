@@ -47,6 +47,7 @@ export default async function HelpPage() {
     <>
       <Section>
         <SectionHeading
+          level={1}
           eyebrow="Help centre"
           title="Short answers to the things that come up"
           description="If none of this covers it, email us — a person replies."

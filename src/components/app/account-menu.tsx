@@ -35,6 +35,10 @@ export function AccountMenu({
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="menu"
+        // The visible text is the signed-in person's name, which does not say
+        // what the control does. The name is kept inside the label so voice
+        // control still matches what is on screen.
+        aria-label={`Account menu for ${name}`}
         className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-stone-100"
       >
         <span

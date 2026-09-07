@@ -23,6 +23,7 @@ export default async function PricingPage() {
     <>
       <Section>
         <SectionHeading
+          level={1}
           eyebrow="Pricing"
           title="Pay for what you generate"
           description="One credit covers a full run: analysis, master listing and all four platform drafts. Editing, copying, exporting and publishing are always free."

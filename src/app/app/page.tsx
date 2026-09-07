@@ -87,8 +87,13 @@ export default async function DashboardPage() {
         />
       </div>
 
+      {/*
+        `min-w-0` on both columns: a grid item's min-width defaults to `auto`,
+        so its widest content sets the track size and the column grows past the
+        grid — which pushed the dashboard sideways on a phone.
+      */}
       <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           {/* Onboarding */}
           {!summary.onboarding.complete ? (
             <Card>
@@ -108,17 +113,23 @@ export default async function DashboardPage() {
                         ) : (
                           <Circle className="size-4 shrink-0 text-stone-300" aria-hidden="true" />
                         )}
+                        {/*
+                          `min-w-0 flex-1` lets the label shrink. Without it a
+                          flex item refuses to go below its content width, and a
+                          long step label pushed this row — and the whole page —
+                          wider than a phone screen.
+                        */}
                         <span
                           className={
                             step.done
-                              ? 'text-[13px] text-muted line-through'
-                              : 'text-[13px] font-medium text-ink'
+                              ? 'min-w-0 flex-1 text-[13px] text-muted line-through'
+                              : 'min-w-0 flex-1 text-[13px] font-medium text-ink'
                           }
                         >
                           {step.label}
                         </span>
                         {!step.done ? (
-                          <ArrowRight className="ml-auto size-3.5 text-subtle" aria-hidden="true" />
+                          <ArrowRight className="size-3.5 shrink-0 text-subtle" aria-hidden="true" />
                         ) : null}
                       </Link>
                     </li>
@@ -178,7 +189,7 @@ export default async function DashboardPage() {
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           {/* Status breakdown */}
           <Card>
             <CardHeader>

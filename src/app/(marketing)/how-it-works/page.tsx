@@ -67,6 +67,7 @@ export default function HowItWorksPage() {
     <>
       <Section>
         <SectionHeading
+          level={1}
           eyebrow="How it works"
           title="Roughly seven minutes, most of it yours"
           description="The AI handles the writing and the platform formatting. You handle the judgement calls, because you are the one who has the item in your hands."
