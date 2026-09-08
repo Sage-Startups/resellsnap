@@ -6,7 +6,34 @@
  * there makes the bundler complain on every build. Importing this file only
  * under the Node runtime keeps that API out of the Edge bundle entirely.
  */
-import { getEnv } from '@/lib/env';
+import { getEnv, KNOWN_ENV_KEYS } from '@/lib/env';
+
+/**
+ * Reports which known variables this container can actually see.
+ *
+ * Names only, never values. When configuration fails, the useful question is
+ * almost never "what is this variable set to" but "is anything reaching this
+ * service at all" — one missing name means a typo or an unsaved field, while a
+ * wholly empty list means the variables were set somewhere this container is
+ * not reading, such as a different service or environment.
+ */
+function visibilityReport(): string {
+  const present: string[] = [];
+  const absent: string[] = [];
+
+  for (const key of KNOWN_ENV_KEYS) {
+    if (process.env[key] === undefined || process.env[key] === '') absent.push(key);
+    else present.push(key);
+  }
+
+  return [
+    `Variables this container can see (${present.length} of ${KNOWN_ENV_KEYS.length}, names only):`,
+    present.length > 0 ? `  ${present.join(', ')}` : '  (none)',
+    '',
+    'Not set:',
+    absent.length > 0 ? `  ${absent.join(', ')}` : '  (none)',
+  ].join('\n');
+}
 
 /**
  * Proves the deployment is configured before the server accepts traffic.
@@ -23,7 +50,9 @@ export function assertEnvironment(): void {
     const detail = error instanceof Error ? error.message : String(error);
 
     // Not the logger: it reads the environment we have just failed to load.
-    console.error(`\nThis deployment is not correctly configured.\n\n${detail}\n`);
+    console.error(
+      `\nThis deployment is not correctly configured.\n\n${detail}\n\n${visibilityReport()}\n`,
+    );
 
     // Exit rather than serve. A container that dies is a failed deploy the
     // platform will surface; one that answers 500s looks healthy.

@@ -100,6 +100,14 @@ const baseSchema = z.object({
   AI_DAILY_COST_LIMIT_CENTS: z.coerce.number().int().nonnegative().default(0),
 });
 
+/**
+ * Every variable name the schema knows about.
+ *
+ * Used only to report which variables a container can and cannot see when the
+ * environment fails to validate. Names only — never values.
+ */
+export const KNOWN_ENV_KEYS: readonly string[] = Object.keys(baseSchema.shape).sort();
+
 export type AppEnv = z.infer<typeof baseSchema> & {
   isProduction: boolean;
   isTest: boolean;
