@@ -451,10 +451,19 @@ queued" figure.
 not exactly match the address in the browser. Check `https`, `www`, and the
 trailing slash.
 
-**The web service boots then dies.** Read the deploy log — the environment
-check runs at boot and names the offending variable. A production deployment
-deliberately refuses to start with `AI_PROVIDER=fake`, `STORAGE_DRIVER=local`,
-`AUTH_RATE_LIMIT=relaxed`, or an `http://` `APP_URL`.
+**The web service starts, then exits with "This deployment is not correctly
+configured".** That is the environment check, and the lines under it name every
+variable that is missing or malformed — set them and redeploy. The check runs
+before the server accepts a single request, deliberately: a container that dies
+is a failed deploy the platform shows you, whereas one that starts and then
+500s looks healthy and passes its healthcheck.
+
+A production deployment also refuses to start with `AI_PROVIDER=fake`,
+`STORAGE_DRIVER=local`, `AUTH_RATE_LIMIT=relaxed`, or an `http://` `APP_URL`.
+
+> Local runs are more forgiving than the image: Next.js loads your `.env`
+> automatically, so a variable you have locally but never set in Railway will
+> look fine on your machine and only fail once deployed.
 
 **The worker deploy is marked unhealthy.** Its config-as-code path is not set
 to `railway.worker.json`, so it inherited the web service's HTTP healthcheck.

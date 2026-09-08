@@ -163,7 +163,9 @@ when something does not work.
 
 6. **Deploy.** The web service's start command runs `pnpm db:deploy` before
    booting, so migrations are applied on every release. Watch the deploy log:
-   a missing or malformed variable fails the boot loudly and says which one.
+   the environment is validated before the server accepts any request, so a
+   missing or malformed variable exits the container and names itself rather
+   than letting a broken deployment go green.
 
 7. **Seed the reference data.** Once, from the web service shell:
 
