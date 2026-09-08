@@ -24,7 +24,8 @@ every credential below is yours.
 
 - **Railway** — hosting, PostgreSQL, cron.
 - **OpenAI** — an API key. Set a spend limit on it while you are there.
-- **Object storage** — Cloudflare R2, AWS S3 or Backblaze B2. Part 1 covers this.
+- **Object storage** — a Railway bucket, created inside the project in Part 1.
+  Any S3-compatible provider works instead; see the end of Part 2.
 - **Resend** — transactional email, with your sending domain verified.
 - **Stripe** — only if you want to charge money. Can wait.
 - **eBay Developer** — only if you want direct publishing. Can wait, and
@@ -44,93 +45,10 @@ openssl rand -hex 32      # CRON_SECRET
 
 ---
 
-## Part 1 — Object storage
+## Part 1 — Project, database and bucket
 
-The app stores every uploaded photograph and every built export here. Two
-things matter: the bucket must be **private**, and it must allow **CORS for
-`PUT`** — the browser uploads directly to the bucket using a short-lived signed
-URL, so without CORS every upload fails.
-
-Cloudflare R2 is the path of least resistance (no egress fees, S3-compatible).
-Instructions for S3 and B2 follow.
-
-### Cloudflare R2
-
-1. In the Cloudflare dashboard, go to **R2 → Create bucket**. Name it, for
-   example, `resellsnap-prod`. Leave public access **off** — this is the
-   default, and it must stay that way.
-
-2. Note your **Account ID** (shown in the R2 sidebar). Your endpoint is:
-
-   ```
-   https://<ACCOUNT_ID>.r2.cloudflarestorage.com
-   ```
-
-3. Go to **R2 → Manage R2 API Tokens → Create API Token**.
-   - Permission: **Object Read & Write**
-   - Scope it to the single bucket you just created.
-   - Create it, then copy the **Access Key ID** and **Secret Access Key**.
-     The secret is shown once.
-
-4. Open the bucket → **Settings → CORS Policy → Edit**, and paste:
-
-   ```json
-   [
-     {
-       "AllowedOrigins": ["https://your-domain.com"],
-       "AllowedMethods": ["PUT"],
-       "AllowedHeaders": ["content-type", "content-length"],
-       "MaxAgeSeconds": 3600
-     }
-   ]
-   ```
-
-   Replace the origin with your real domain, including `https://` and no
-   trailing slash. If you are testing on the `*.up.railway.app` address first,
-   put that here and change it when you attach your domain.
-
-5. Your variables:
-
-   ```
-   STORAGE_DRIVER=s3
-   S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
-   S3_REGION=auto
-   S3_BUCKET=resellsnap-prod
-   S3_ACCESS_KEY_ID=<from step 3>
-   S3_SECRET_ACCESS_KEY=<from step 3>
-   S3_FORCE_PATH_STYLE=true
-   ```
-
-### AWS S3 instead
-
-Create the bucket with **Block all public access** left on. Create an IAM user
-with a policy limited to that bucket (`s3:PutObject`, `s3:GetObject`,
-`s3:DeleteObject`, `s3:ListBucket`). Add the same CORS rule as above under the
-bucket's **Permissions → Cross-origin resource sharing**.
-
-```
-S3_ENDPOINT=                       # leave empty; the SDK resolves AWS
-S3_REGION=eu-west-2                # your bucket's real region
-S3_FORCE_PATH_STYLE=false          # AWS prefers virtual-hosted style
-```
-
-### Backblaze B2 instead
-
-Create a private bucket and an application key scoped to it.
-
-```
-S3_ENDPOINT=https://s3.us-west-004.backblazeb2.com   # your bucket's region
-S3_REGION=us-west-004
-S3_FORCE_PATH_STYLE=true
-```
-
-> **Back this bucket up yourself.** Railway's database backups do not cover it,
-> and it holds photographs your customers may have nowhere else. Turn on your
-> provider's versioning or lifecycle rules.
-
----
-
-## Part 2 — Railway project and database
+Railway Buckets are S3-compatible object storage that lives in the same project
+as the app, so this is all one place.
 
 1. In Railway: **New Project → Deploy from GitHub repo**, and select this
    repository. Railway reads `railway.json` and builds the `Dockerfile`.
@@ -138,10 +56,129 @@ S3_FORCE_PATH_STYLE=true
 2. The first build will start and may fail or crash-loop. That is expected —
    there are no variables yet. Ignore it until Part 3.
 
-3. In the same project: **New → Database → Add PostgreSQL**.
+3. Rename that service to `web` (**Settings → Service Name**), so the services
+   stay easy to tell apart.
 
-4. Rename the app service to `web` (**Settings → Service Name**) so the three
-   services are easy to tell apart later.
+4. **New → Database → Add PostgreSQL.**
+
+5. **New → Bucket.** Name it, for example, `resellsnap-photos`.
+
+   Leave it **private**. The app serves photographs through its own authorised
+   routes and short-lived signed URLs; a public bucket would expose every
+   customer's photographs to anyone with the object key. Do not attach a
+   public-bucket or CDN proxy template to it.
+
+> **Back this bucket up yourself.** Railway's PostgreSQL backups do not cover
+> bucket contents, and it holds photographs your customers may have nowhere
+> else.
+
+---
+
+## Part 2 — Bucket credentials and CORS
+
+### The credentials
+
+Open the bucket service → **Variables**. Railway exposes the S3 credentials
+under names that depend on which client preset you picked when creating it —
+commonly either
+
+```
+BUCKET_ENDPOINT   BUCKET_NAME   BUCKET_ACCESS_KEY_ID   BUCKET_SECRET_ACCESS_KEY
+```
+
+or the AWS SDK preset:
+
+```
+AWS_ENDPOINT_URL   AWS_S3_BUCKET_NAME   AWS_ACCESS_KEY_ID   AWS_SECRET_ACCESS_KEY   AWS_DEFAULT_REGION
+```
+
+**Read the real names off that Variables tab** rather than assuming. This app
+uses its own `S3_*` names, so wire them across with Railway variable
+references. With the `BUCKET_*` preset and a bucket service named `Bucket`:
+
+```bash
+STORAGE_DRIVER=s3
+S3_ENDPOINT=${{Bucket.BUCKET_ENDPOINT}}
+S3_BUCKET=${{Bucket.BUCKET_NAME}}
+S3_ACCESS_KEY_ID=${{Bucket.BUCKET_ACCESS_KEY_ID}}
+S3_SECRET_ACCESS_KEY=${{Bucket.BUCKET_SECRET_ACCESS_KEY}}
+S3_REGION=auto
+S3_FORCE_PATH_STYLE=true
+```
+
+Substitute the service name and the variable names you actually see. You can
+also read them from a terminal with `railway bucket credentials`.
+
+### The CORS policy
+
+The browser uploads straight to the bucket over a short-lived signed `PUT` —
+the file never passes through the app server. That is a cross-origin request,
+so without a CORS policy **every upload fails**, and it fails looking like a
+broken app rather than a missing bucket setting.
+
+Railway has **no CORS panel in the dashboard**. Set it with the AWS CLI against
+the bucket's endpoint.
+
+Save this as `cors.json`, with your real origin — `https://`, no trailing
+slash:
+
+```json
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": ["https://your-domain.com"],
+      "AllowedMethods": ["PUT"],
+      "AllowedHeaders": ["content-type", "content-length"],
+      "MaxAgeSeconds": 3600
+    }
+  ]
+}
+```
+
+Then apply it, using the bucket's own credentials:
+
+```bash
+export AWS_ACCESS_KEY_ID=<the bucket's access key id>
+export AWS_SECRET_ACCESS_KEY=<the bucket's secret access key>
+export AWS_DEFAULT_REGION=auto
+
+aws s3api put-bucket-cors \
+  --endpoint-url "<the bucket's endpoint>" \
+  --bucket "<the bucket name>" \
+  --cors-configuration file://cors.json
+```
+
+Check it took:
+
+```bash
+aws s3api get-bucket-cors \
+  --endpoint-url "<the bucket's endpoint>" \
+  --bucket "<the bucket name>"
+```
+
+If you are testing on the `*.up.railway.app` address first, put that in
+`AllowedOrigins` and re-run this command when you attach your real domain in
+Part 7.
+
+`AllowedHeaders` lists exactly the two headers the signed upload sends. `PUT`
+is the only method the browser needs: photographs are read back through the
+app's own proxy route, and export downloads are ordinary top-level navigations,
+neither of which is a cross-origin fetch.
+
+### If you would rather not use a Railway bucket
+
+Any S3-compatible provider works — the app only needs presigned `PUT` and a
+CORS policy. The variables and the CORS rule above are the same; only the
+endpoint, region and path-style differ.
+
+| Provider | `S3_ENDPOINT` | `S3_REGION` | `S3_FORCE_PATH_STYLE` |
+| --- | --- | --- | --- |
+| Cloudflare R2 | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` | `auto` | `true` |
+| AWS S3 | *(leave empty)* | the bucket's real region | `false` |
+| Backblaze B2 | `https://s3.<region>.backblazeb2.com` | e.g. `us-west-004` | `true` |
+
+R2 and AWS both have a CORS editor in their dashboards, so there you can paste
+the rule rather than using the CLI. Keep the bucket private in every case.
 
 ---
 
@@ -170,13 +207,14 @@ AI_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 AI_DAILY_COST_LIMIT_CENTS=0
 
-# Storage — from Part 1
+# Storage — from Part 2. Check the real variable names on the bucket
+# service's own Variables tab; the preset decides them.
 STORAGE_DRIVER=s3
-S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+S3_ENDPOINT=${{Bucket.BUCKET_ENDPOINT}}
+S3_BUCKET=${{Bucket.BUCKET_NAME}}
+S3_ACCESS_KEY_ID=${{Bucket.BUCKET_ACCESS_KEY_ID}}
+S3_SECRET_ACCESS_KEY=${{Bucket.BUCKET_SECRET_ACCESS_KEY}}
 S3_REGION=auto
-S3_BUCKET=resellsnap-prod
-S3_ACCESS_KEY_ID=...
-S3_SECRET_ACCESS_KEY=...
 S3_FORCE_PATH_STYLE=true
 
 # Email
@@ -262,8 +300,8 @@ It is safe to run again; it upserts.
 1. `web` service → **Settings → Networking → Custom Domain**. Add your domain
    and create the CNAME record Railway shows you.
 2. Update `APP_URL` to exactly that address — `https://`, no trailing slash.
-3. **Go back to your bucket's CORS policy** (Part 1, step 4) and change
-   `AllowedOrigins` to the same address.
+3. **Re-apply the bucket's CORS policy** (Part 2) with `AllowedOrigins` set to
+   the same address, and confirm it with `aws s3api get-bucket-cors`.
 
 `APP_URL` is checked against the address in the browser's bar for auth cookies
 and OAuth redirects. A mismatch — `www` versus bare, `http` versus `https`, a
@@ -400,6 +438,10 @@ tab and look at the `PUT`:
 - `403 SignatureDoesNotMatch` → `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` are
   wrong, or `S3_REGION` does not match the bucket.
 - `404 NoSuchBucket` → `S3_BUCKET` or `S3_ENDPOINT` is wrong.
+
+**You cannot find the CORS setting in Railway.** There isn't one — Railway has
+no CORS panel. It is set with `aws s3api put-bucket-cors` against the bucket's
+endpoint, as in Part 2.
 
 **Photos stay at "processing".** The worker is down or was never created.
 Check its log for `Worker started`, and `/admin/health` for a rising "oldest

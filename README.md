@@ -125,10 +125,13 @@ when something does not work.
 
 2. **Add PostgreSQL.** *New → Database → Add PostgreSQL* in the same project.
 
-3. **Add object storage.** Create a bucket with any S3-compatible provider
-   (Cloudflare R2, Backblaze B2, AWS S3). Keep it **private** — the app serves
-   photos through its own authorised routes and signed URLs, and a public
-   bucket would expose every customer's photographs.
+3. **Add object storage.** *New → Bucket* in the same project. Keep it
+   **private** — the app serves photos through its own authorised routes and
+   short-lived signed URLs, and a public bucket would expose every customer's
+   photographs. Then set a CORS policy allowing `PUT` from your domain, without
+   which every upload fails; Railway has no CORS panel, so this is an
+   `aws s3api put-bucket-cors` call. Any other S3-compatible provider works
+   too. [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) has the exact commands.
 
 4. **Set the web service variables.** Under the web service → *Variables*:
 
