@@ -11,6 +11,7 @@ import { adminAdjustCredits } from '@/server/credits';
 import { recordAudit, AUDIT_ACTIONS } from '@/server/audit';
 import { requireApiStaff, requestMetadata } from '@/server/session';
 import { invalidateSettingsCache, updateSettings, type AppSettings } from '@/server/settings';
+import { invalidatePublicDataCache } from '@/server/public-data';
 import { previewTemplateEmail, sendTemplateEmail } from '@/server/email';
 import { retryJob, cancelJob } from '@/server/jobs/queue';
 import { processStripeEvent } from '@/server/billing/service';
@@ -579,6 +580,8 @@ export async function updatePlanAction(raw: unknown): Promise<AdminActionResult>
       ...(await requestMetadata()),
     });
 
+    // The marketing site caches plans per container; drop it so the edit shows.
+    invalidatePublicDataCache();
     revalidatePath('/admin/plans');
     revalidatePath('/pricing');
     return undefined;
@@ -624,6 +627,9 @@ export async function updateContentBlockAction(input: {
       ...(await requestMetadata()),
     });
 
+    // FAQ and announcement copy are cached per container; drop it so the edit
+    // shows on the marketing site immediately.
+    invalidatePublicDataCache();
     revalidatePath('/');
     revalidatePath('/admin/content');
     return undefined;
