@@ -37,10 +37,10 @@ database backup.
 
 ## 3. First deployment
 
-Follow the ten steps in the [README](../README.md#deploying-to-railway). In
-short: create the project, add PostgreSQL and a bucket, set the variables, add
-the worker service, deploy, seed, attach the domain, wire Stripe, promote
-yourself, schedule maintenance.
+Follow [`DEPLOYMENT.md`](DEPLOYMENT.md), which walks the whole thing including
+bucket and CORS setup. In short: create the project, add PostgreSQL and a
+bucket, set the variables, add the worker and cron services, deploy, seed,
+attach the domain, wire Stripe, promote yourself.
 
 - [ ] Web service deploys and `/api/health` answers.
 - [ ] `/api/ready` answers — this proves the database connection.

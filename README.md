@@ -115,7 +115,9 @@ one address.
 
 ## Deploying to Railway
 
-Ten steps, start to finish.
+Ten steps, start to finish. [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) is the
+same journey in full detail, including bucket and CORS setup, and what to check
+when something does not work.
 
 1. **Create the project.** In Railway, *New Project → Deploy from GitHub repo*
    and pick this repository. Railway reads `railway.json` and builds the
@@ -149,10 +151,12 @@ Ten steps, start to finish.
 
    `.env.example` documents every variable, including the optional ones.
 
-5. **Add the worker service.** *New → Empty Service*, point it at the same
-   repository, and set its start command to `pnpm worker`. Give it the same
-   variables as the web service — the simplest way is a shared variable group.
-   Without this service nothing is ever generated.
+5. **Add the worker service.** *New → GitHub Repo*, the same repository again.
+   Under *Settings → Config-as-code* set the path to `railway.worker.json`,
+   which runs `pnpm worker` and keeps the worker from inheriting the web
+   service's HTTP healthcheck — it serves no HTTP, so that check would fail it
+   forever. Give it the same variables as the web service; a shared variable
+   group is the tidiest way. Without this service nothing is ever generated.
 
 6. **Deploy.** The web service's start command runs `pnpm db:deploy` before
    booting, so migrations are applied on every release. Watch the deploy log:
@@ -179,9 +183,10 @@ Ten steps, start to finish.
    switched off and the app says so rather than offering a broken checkout.
 
 10. **Promote yourself and schedule maintenance.** Sign up through the app,
-    then run `pnpm bootstrap:admin` from the service shell. Finally add a Cron
-    service on the same image with the command `pnpm maintenance` and a daily
-    schedule, to expire old exports, reclaim stalled jobs and prune dead data.
+    then run `pnpm bootstrap:admin` from the service shell. Finally add a third
+    service from the same repository with its config-as-code path set to
+    `railway.cron.json` and a daily *Cron Schedule*, to expire old exports,
+    reclaim stalled jobs and prune dead data.
 
 ### After it is up
 
@@ -195,6 +200,8 @@ Ten steps, start to finish.
 
 ## Documentation
 
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — the full deployment
+  walkthrough, including object storage and troubleshooting.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — how the pieces fit, and the state
   machines behind AI jobs, credits and publication.
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — running it day to day.
