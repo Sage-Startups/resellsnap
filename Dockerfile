@@ -27,6 +27,16 @@ WORKDIR /app
 
 RUN corepack enable
 
+# Purely to quieten `prisma generate`, which probes for libssl and warns that it
+# "may not work as expected" when it cannot find it. This project generates the
+# TypeScript client and talks to PostgreSQL through a driver adapter, so no
+# query-engine binary is involved and the warning is cosmetic — but a scary
+# warning in every build log is worth a few seconds. Build stage only; it is
+# not in the shipped image.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssl \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
